@@ -2,6 +2,21 @@
 
 see [TODO](/TODO.md) for planned features
 
+## Screenshots worth a thousand words
+
+<a href='/Documentation/Screenshots%20Features/Foodpicker%20-%20Camera.png'><img src='/Documentation/Screenshots%20Features/Foodpicker%20-%20Camera.png?raw=true' alt='Documentation/Screenshots%20Features/Foodpicker%20-%20Camera.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Foodpicker%20-%20Drinks.png'><img src='/Documentation/Screenshots%20Features/Foodpicker%20-%20Drinks.png?raw=true' alt='Documentation/Screenshots%20Features/Foodpicker%20-%20Drinks.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Foodpicker%20-%20Multiple.png'><img src='/Documentation/Screenshots%20Features/Foodpicker%20-%20Multiple.png?raw=true' alt='Documentation/Screenshots%20Features/Foodpicker%20-%20Multiple.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Foodpicker%20-%20Single.png'><img src='/Documentation/Screenshots%20Features/Foodpicker%20-%20Single.png?raw=true' alt='Documentation/Screenshots%20Features/Foodpicker%20-%20Single.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/QuickCarbs%20-%20Default.png'><img src='/Documentation/Screenshots%20Features/QuickCarbs%20-%20Default.png?raw=true' alt='Documentation/Screenshots%20Features/QuickCarbs%20-%20Default.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Settings%20-%20AutoBolus.png'><img src='/Documentation/Screenshots%20Features/Settings%20-%20AutoBolus.png?raw=true' alt='Documentation/Screenshots%20Features/Settings%20-%20AutoBolus.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Settings%20-%20Disconnect%20Sports.png'><img src='/Documentation/Screenshots%20Features/Settings%20-%20Disconnect%20Sports.png?raw=true' alt='Documentation/Screenshots%20Features/Settings%20-%20Disconnect%20Sports.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Settings%20-%20Expertmode.png'><img src='/Documentation/Screenshots%20Features/Settings%20-%20Expertmode.png?raw=true' alt='Documentation/Screenshots%20Features/Settings%20-%20Expertmode.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Settings%20-%20MaxIOB%20MinBasal.png'><img src='/Documentation/Screenshots%20Features/Settings%20-%20MaxIOB%20MinBasal.png?raw=true' alt='Documentation/Screenshots%20Features/Settings%20-%20MaxIOB%20MinBasal.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Settings%20-%20MinBasal.png'><img src='/Documentation/Screenshots%20Features/Settings%20-%20MinBasal.png?raw=true' alt='Documentation/Screenshots%20Features/Settings%20-%20MinBasal.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Status%20-%20Disconnected.png'><img src='/Documentation/Screenshots%20Features/Status%20-%20Disconnected.png?raw=true' alt='Documentation/Screenshots%20Features/Status%20-%20Disconnected.png' width='170'></a>
+<a href='/Documentation/Screenshots%20Features/Status%20-%20MealInformation%20-%20Automatic%20Bolus.png'><img src='/Documentation/Screenshots%20Features/Status%20-%20MealInformation%20-%20Automatic%20Bolus.png?raw=true' alt='Documentation/Screenshots%20Features/Status%20-%20MealInformation%20-%20Automatic%20Bolus.png' width='170'></a>
+
 ## Automated Bolus Core Infrastructure
 
 - Give automated bolus of 70% of the recommended value.
@@ -112,3 +127,4 @@ Just reduce it a lot.
 ## Display more info for bolus
 
 Like the progress, especially for bigger bolus amounts would be useful.
+
