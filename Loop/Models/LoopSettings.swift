@@ -13,8 +13,6 @@ struct LoopSettings {
 
     var bolusEnabled = false
     
-    var pumpDetached = false
-    
     let dynamicCarbAbsorptionEnabled = true
 
     var glucoseTargetRangeSchedule: GlucoseRangeSchedule?
@@ -70,10 +68,6 @@ extension LoopSettings: RawRepresentable {
         if let bolusEnabled = rawValue["bolusEnabled"] as? Bool {
             self.bolusEnabled = bolusEnabled
         }
-        
-        if let pumpDetached = rawValue["pumpDetached"] as? Bool {
-            self.pumpDetached = pumpDetached
-        }
 
         if let rawValue = rawValue["glucoseTargetRangeSchedule"] as? GlucoseRangeSchedule.RawValue {
             self.glucoseTargetRangeSchedule = GlucoseRangeSchedule(rawValue: rawValue)
@@ -98,7 +92,6 @@ extension LoopSettings: RawRepresentable {
             "version": LoopSettings.version,
             "dosingEnabled": dosingEnabled,
             "bolusEnabled": bolusEnabled,
-            "pumpDetached": pumpDetached,
             "retrospectiveCorrectionEnabled": retrospectiveCorrectionEnabled
         ]
 
