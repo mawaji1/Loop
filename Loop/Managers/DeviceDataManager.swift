@@ -498,13 +498,22 @@ final class DeviceDataManager {
             ops.setNormalBolus(units: units) { (error) in
                 if let error = error {
                     self.logger.addError(error, fromSource: "Bolus")
-                    self.loopManager.addDebugNote("retryBolus \(attempt) \(error)")
+                    self.loopManager.addInternalNote("retryBolus \(attempt) \(error)")
                     // TODO(Erik): add Failed Bolus
                     let str = "\(error)"
                     var retry = false
                     switch(error) {
                     case .certain(_):
-                        retry = true
+                        if str.contains("bolusInProgress") {
+                            self.loopManager.addConfirmedBolus(units: units, at: Date()) {
+                                self.loopManager.addInternalNote("retryBolus - already in progress, confirming.")
+                                self.triggerPumpDataRead()
+                                notify(nil)
+                            }
+                            return
+                        } else {
+                            retry = true
+                        }
                     case .uncertain(_):
                         if (str.contains("noResponse(") || str.contains("unknownResponse(")) && str.contains("powerOn") {
                             retry = true
