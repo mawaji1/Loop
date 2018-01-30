@@ -64,6 +64,8 @@ final class LoopDataManager {
         self.lastTempBasal = lastTempBasal
         self.settings = settings
         self.minimumBasalRateSchedule = minimumBasalRateSchedule
+        self.pumpDetachedMode = UserDefaults.standard.pumpDetachedMode
+        
         let healthStore = HKHealthStore()
 
         carbStore = CarbStore(
@@ -364,9 +366,10 @@ final class LoopDataManager {
     ///   - date: The date the bolus was enacted
     func addConfirmedBolus(units: Double, at date: Date, completion: (() -> Void)?) {
         let event = NewPumpEvent.enactedBolus(units: units, at: date)
+        self.addInternalNote("Bolus Confirmed: \(units) \(date)")
         self.doseStore.addPendingPumpEvent(event) {
             self.dataAccessQueue.async {
-                self.addInternalNote("Bolus Confirmed: \(units) \(date)")
+                self.addInternalNote("Bolus Confirmed Callback: \(units) \(date)")
 
                 let requestDate = self.lastRequestedBolus?.date ?? date
                 self.lastPendingBolus = (units: units, date: requestDate, reservoir: self.doseStore.lastReservoirValue, event: event)
