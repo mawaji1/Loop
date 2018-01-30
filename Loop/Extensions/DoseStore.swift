@@ -8,7 +8,14 @@
 
 import InsulinKit
 import MinimedKit
+import NightscoutUploadKit
 
+public enum FakeEventTypes: UInt8 {
+    case note = 0xfe  // Must not exist in MinimedKit.PumpEventType!
+    case siteChange = 0xfd
+    case insulinChange = 0xfc
+    case bgReceived = 0xfb
+}
 
 // Bridges support for MinimedKit data types
 extension LoopDataManager {
@@ -100,5 +107,85 @@ extension LoopDataManager {
         }
 
         addPumpEvents(events, completion: completion)
+    }
+    
+    // Modifications to handle more logging events from App in Nightscout
+    //
+    private func addFakeEvent(_ type: FakeEventTypes, _ note: String) {
+        UserDefaults.standard.pendingTreatments.append((type: Int(type.rawValue), date: Date(), note: note))
+        uploadTreatments()
+    }
+    
+    private func uploadTreatments() {
+        var treatments = [NightscoutTreatment]()
+        let author = "loop://\(UIDevice.current.name)"
+        // TODO(Erik) needs locking
+        let pendingTreatments = UserDefaults.standard.pendingTreatments
+        UserDefaults.standard.pendingTreatments = []
+        
+        for rawTreatment in pendingTreatments {
+            let date = rawTreatment.date
+            let note = rawTreatment.note
+            guard let eventType = FakeEventTypes(rawValue: UInt8(rawTreatment.type)) else {
+                print("uploadTreatments, invalid eventType", rawTreatment)
+                continue
+            }
+            switch(eventType) {
+        
+            case .note:
+                treatments.append(NoteNightscoutTreatment(timestamp: date, enteredBy: author, notes: note))
+            case .insulinChange:
+                treatments.append(NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note)", eventType: "Insulin Change"))
+            case .siteChange:
+                treatments.append(NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note)", eventType: "Site Change"))
+            case .bgReceived:
+                let parts = note.split(separator: " ", maxSplits: 1)
+                let amount = Int(parts[0]) ?? 0
+                let comment = String(parts[1])
+                let treatment = BGCheckNightscoutTreatment(
+                    timestamp: date,
+                    enteredBy: author,
+                    glucose: amount,
+                    glucoseType: .Meter,
+                    units: .MGDL,
+                    notes: comment
+                )
+                treatments.append(treatment)
+            }
+        }
+
+        delegate.loopDataManager(self, uploadTreatments: treatments) { (notUploadedTreatments) in
+            if notUploadedTreatments.count > 0 {
+                // TODO(Erik): This is a bit messed up - and should probably rather live in the delegate
+                for pending in pendingTreatments {
+                    UserDefaults.standard.pendingTreatments.append(pending)
+                }
+            }
+        }
+    }
+    
+    public func addNote(_ text: String) {
+        print("addNote: ", text)
+        addFakeEvent(.note, text)
+    }
+    
+    public func addInternalNote(_ text: String) {
+        addFakeEvent(.note, "INTERNAL \(text)")
+    }
+    
+    public func addDebugNote(_ text: String) {
+        addFakeEvent(.note, "DEBUG \(text)")
+    }
+    
+    public func addInsulinChange(_ text: String) {
+        addFakeEvent(.insulinChange, text)
+    }
+    
+    public func addSiteChange(_ text: String) {
+        addFakeEvent(.siteChange, text)
+    }
+    
+    public func addBGReceived(bloodGlucose: Int, comment: String = "") {
+        addFakeEvent(.bgReceived, "\(bloodGlucose) \(comment)")
     }
 }

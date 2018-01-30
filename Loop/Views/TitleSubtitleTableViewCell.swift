@@ -17,7 +17,9 @@ class TitleSubtitleTableViewCell: UITableViewCell {
             subtitleLabel.textColor = UIColor.secondaryLabelColor
         }
     }
-
+    
+    @IBOutlet weak var explanationLabel: UILabel!
+    
     override func layoutSubviews() {
         super.layoutSubviews()
 

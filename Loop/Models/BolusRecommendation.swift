@@ -67,24 +67,31 @@ extension BolusRecommendationNotice: Equatable {
 
 struct BolusRecommendation {
     let amount: Double
+    let netAmount: Double  // can be negative, e.g. to calculate recommended carbs.
     let pendingInsulin: Double
     var notice: BolusRecommendationNotice?
+    // only in case of negative amount
+    let target : HKQuantity?
+    let minPrediction : GlucoseValue?
 
-    init(amount: Double, pendingInsulin: Double, notice: BolusRecommendationNotice? = nil) {
+    init(amount: Double, pendingInsulin: Double, notice: BolusRecommendationNotice? = nil, netAmount: Double? = nil, target: HKQuantity? = nil, minPrediction: GlucoseValue? = nil) {
         self.amount = amount
+        self.netAmount = netAmount ?? amount
         self.pendingInsulin = pendingInsulin
         self.notice = notice
+        self.target = target
+        self.minPrediction = minPrediction
     }
 }
 
 
 extension BolusRecommendation: Comparable {
     static func ==(lhs: BolusRecommendation, rhs: BolusRecommendation) -> Bool {
-        return lhs.amount == rhs.amount
+        return lhs.amount == rhs.amount && lhs.netAmount == rhs.netAmount
     }
 
     static func <(lhs: BolusRecommendation, rhs: BolusRecommendation) -> Bool {
-        return lhs.amount < rhs.amount
+        return lhs.amount < rhs.amount && lhs.netAmount < rhs.netAmount
     }
 }
 

@@ -29,7 +29,9 @@ final class AnalyticsManager: IdentifiableClass {
     }
 
     static let shared = AnalyticsManager()
-
+    
+    public var loopManager : LoopDataManager? = nil
+    
     // MARK: - Helpers
 
     private var logger: CategoryLogger?
@@ -37,6 +39,12 @@ final class AnalyticsManager: IdentifiableClass {
     private func logEvent(_ name: String, withProperties properties: [AnyHashable: Any]? = nil, outOfSession: Bool = false) {
         logger?.debug("\(name) \(properties ?? [:])")
         amplitudeService.client?.logEvent(name, withEventProperties: properties, outOfSession: outOfSession)
+        
+        if let loop = self.loopManager {
+            if name != "Loop success" {
+                loop.addInternalNote("Analytics: \(name) \(properties ?? [:])")
+            }
+        }
     }
 
     // MARK: - UIApplicationDelegate

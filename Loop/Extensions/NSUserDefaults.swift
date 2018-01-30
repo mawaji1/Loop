@@ -10,11 +10,12 @@ import Foundation
 import LoopKit
 import InsulinKit
 import MinimedKit
+import NightscoutUploadKit
 import HealthKit
 
 extension UserDefaults {
 
-    private enum Key: String {
+    fileprivate enum Key: String {
         case basalRateSchedule = "com.loudnate.Naterade.BasalRateSchedule"
         case batteryChemistry = "com.loopkit.Loop.BatteryChemistry"
         case cgmSettings = "com.loopkit.Loop.cgmSettings"
@@ -29,6 +30,15 @@ extension UserDefaults {
         case pumpModelNumber = "com.loudnate.Naterade.PumpModelNumber"
         case pumpRegion = "com.loopkit.Loop.PumpRegion"
         case pumpTimeZone = "com.loudnate.Naterade.PumpTimeZone"
+        
+        case minimumBasalRateSchedule = "com.loudnate.Loop.MinBasalRateSchedule"
+        case foodStats = "com.loopkit.Loop.foodStats"
+        case foodManagerNeedUpload = "com.loopkit.Loop.foodNeedUpload"
+        case pumpDetachedMode = "com.loopkit.Loop.pumpDetachedMode"
+        
+        case lastUploadedNightscoutProfile = "com.loopkit.Loop.lastUploadedNightscoutProfile"
+        
+        case pendingTreatments = "com.loopkit.Loop.pendingTreatments"
     }
 
     var basalRateSchedule: BasalRateSchedule? {
@@ -143,9 +153,12 @@ extension UserDefaults {
 
                 let settings = LoopSettings(
                     dosingEnabled: bool(forKey: "com.loudnate.Naterade.DosingEnabled"),
+                    bolusEnabled: false,
+                    pumpDetached: false,
                     glucoseTargetRangeSchedule: glucoseTargetRangeSchedule,
                     maximumBasalRatePerHour: maximumBasalRatePerHour,
                     maximumBolus: maximumBolus,
+                    maximumInsulinOnBoard: nil,
                     suspendThreshold: suspendThreshold,
                     retrospectiveCorrectionEnabled: bool(forKey: "com.loudnate.Loop.RetrospectiveCorrectionEnabled")
                 )
@@ -277,3 +290,154 @@ extension UserDefaults {
     }
 
 }
+
+
+// PRIVATE MODIFICATIONS
+extension UserDefaults {
+    
+    var minimumBasalRateSchedule: BasalRateSchedule? {
+        get {
+            if let rawValue = dictionary(forKey: Key.minimumBasalRateSchedule.rawValue) {
+                return BasalRateSchedule(rawValue: rawValue)
+            } else {
+                return nil
+            }
+        }
+        set {
+            set(newValue?.rawValue, forKey: Key.minimumBasalRateSchedule.rawValue)
+        }
+    }
+    
+    
+    var textDump : String {
+        return self.dictionaryRepresentation().debugDescription
+    }
+    
+    var foodStats : [String: [String: Int]] {
+        get {
+            if let rawValue = dictionary(forKey: Key.foodStats.rawValue) {
+                var ret : [String: [String: Int]] = [:]
+                for raw in rawValue {
+                    if let val = raw.value as? [String: Int] {
+                        let key = raw.key
+                        ret[key] = val
+                    }
+                }
+                return ret
+            } else {
+                return [:]
+            }
+        }
+        set {
+            set(newValue, forKey: Key.foodStats.rawValue)
+        }
+    }
+    
+    var foodManagerNeedUpload : [String] {
+        get {
+            return array(forKey: Key.foodManagerNeedUpload.rawValue) as? [String] ?? []
+        }
+        set {
+            set(newValue, forKey: Key.foodManagerNeedUpload.rawValue)
+        }
+    }
+    
+    var pendingTreatments: [(type: Int, date: Date, note: String)] {
+        get {
+            var ret : [(type: Int, date: Date, note: String)] = []
+            for element in array(forKey: Key.pendingTreatments.rawValue) as? [[String:Any]] ?? [] {
+                guard let type = element["type"] as? Int, let date = element["date"] as? Date, let note = element["note"] as? String else {
+                    print("Cannot parse stored pendingTreatment", element)
+                    continue
+                }
+                ret.append((type: type, date: date, note: note))
+            }
+            return ret
+        }
+        set {
+            var raw : [[String:Any]] = []
+            for value in newValue {
+                raw.append([
+                    "type": value.type,
+                    "date": value.date,
+                    "note": value.note
+                ])
+            }
+            set(raw, forKey: Key.pendingTreatments.rawValue)
+        }
+    }
+    
+    var pumpDetachedMode: Date? {
+        get {
+            let value = double(forKey: Key.pumpDetachedMode.rawValue)
+            if value > 0 {
+                return Date(timeIntervalSinceReferenceDate: value)
+            } else {
+                return nil
+            }
+        }
+        set {
+            if newValue == nil {
+                removeObject(forKey: Key.pumpDetachedMode.rawValue)
+            } else {
+                set(newValue?.timeIntervalSinceReferenceDate, forKey: Key.pumpDetachedMode.rawValue)
+            }
+        }
+    }
+    
+
+
+    var lastUploadedNightscoutProfile: String {
+        get {
+            return string(forKey: Key.lastUploadedNightscoutProfile.rawValue) ?? "{}"
+        }
+        set {
+            set(newValue, forKey: Key.lastUploadedNightscoutProfile.rawValue)
+        }
+    }
+    
+    func uploadProfile(uploader: NightscoutUploader, retry: Int = 0) {
+        // TODO(Erik): Check last upload date, and only upload on demand.
+        guard let glucoseTargetRangeSchedule = loopSettings?.glucoseTargetRangeSchedule,
+            let insulinSensitivitySchedule = insulinSensitivitySchedule,
+            let carbRatioSchedule = carbRatioSchedule,
+            let basalRateSchedule = basalRateSchedule
+            
+            else {
+            return
+        }
+        if retry > 5 {
+            return
+        }
+        let profile = NightscoutProfile(
+          timestamp: Date(),
+          name: "Loop2",
+          rangeSchedule: glucoseTargetRangeSchedule,
+          sensitivity: insulinSensitivitySchedule,
+          carbs: carbRatioSchedule,
+          basal : basalRateSchedule,
+          timezone : TimeZone.current,
+          dia : (insulinModelSettings?.model.effectDuration ?? 0) / 3600,
+          settings : loopSettings?.rawValue ?? [:]
+        )
+        if profile.json != lastUploadedNightscoutProfile {
+            uploader.uploadProfile(profile) { (result) in
+                switch result {
+                case .failure(let error):
+                    print("uploadProfile failed, try \(retry)", error as Any)
+                    // Try again with linear backoff
+                    let retries = retry + 1
+                    DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + Double(300 * retries) ) {
+                        self.uploadProfile(uploader: uploader, retry: retries)
+                    }
+                case .success(_):
+                    if let json = profile.json {
+                        self.lastUploadedNightscoutProfile = json
+                    }
+                }
+            }
+        }
+    }
+    
+}
+

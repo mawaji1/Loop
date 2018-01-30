@@ -18,6 +18,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     private(set) lazy var deviceManager = DeviceDataManager()
 
+    private(set) lazy var foodManager = FoodManager()
+    
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplicationLaunchOptionsKey: Any]?) -> Bool {
         window?.tintColor = UIColor.tintColor
 
@@ -32,8 +34,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         if  let navVC = window?.rootViewController as? UINavigationController,
             let statusVC = navVC.viewControllers.first as? StatusTableViewController {
             statusVC.deviceManager = deviceManager
+            statusVC.foodManager = foodManager
         }
 
+        application.setMinimumBackgroundFetchInterval(300.0)
+        
         return true
     }
 
@@ -53,6 +58,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // deviceManager.maybeToggleBluetooth("did-become-active")
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -96,4 +102,16 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.badge, .sound, .alert])
     }
+}
+
+
+// Watchdog for resetting Bluetooth if needed.
+extension AppDelegate {
+    
+    func application(application: UIApplication, performFetchWithCompletionHandler completionHandler: (UIBackgroundFetchResult) -> Void) {
+        print("Fetch!");
+        deviceManager.maybeToggleBluetooth("background-fetch")
+        completionHandler(UIBackgroundFetchResult.newData)
+    }
+    
 }

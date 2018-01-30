@@ -11,6 +11,10 @@ import LoopKit
 struct LoopSettings {
     var dosingEnabled = false
 
+    var bolusEnabled = false
+    
+    var pumpDetached = false
+    
     let dynamicCarbAbsorptionEnabled = true
 
     var glucoseTargetRangeSchedule: GlucoseRangeSchedule?
@@ -18,10 +22,21 @@ struct LoopSettings {
     var maximumBasalRatePerHour: Double?
 
     var maximumBolus: Double?
+    
+    var maximumInsulinOnBoard: Double?
 
     var suspendThreshold: GlucoseThreshold? = nil
 
     var retrospectiveCorrectionEnabled = true
+    
+    // Not configurable through UI
+    let automatedBolusThreshold: Double = 0.2
+    let automatedBolusRatio: Double = 0.7
+    let automaticBolusInterval: TimeInterval = TimeInterval(minutes: 5)
+    let absorptionRate: Double = 20
+    
+    let minimumRecommendedBolus: Double = 0.2
+    let insulinIncrementPerUnit: Double = 10  // 0.1 steps in basal and bolus
 }
 
 
@@ -51,6 +66,14 @@ extension LoopSettings: RawRepresentable {
         if let dosingEnabled = rawValue["dosingEnabled"] as? Bool {
             self.dosingEnabled = dosingEnabled
         }
+        
+        if let bolusEnabled = rawValue["bolusEnabled"] as? Bool {
+            self.bolusEnabled = bolusEnabled
+        }
+        
+        if let pumpDetached = rawValue["pumpDetached"] as? Bool {
+            self.pumpDetached = pumpDetached
+        }
 
         if let rawValue = rawValue["glucoseTargetRangeSchedule"] as? GlucoseRangeSchedule.RawValue {
             self.glucoseTargetRangeSchedule = GlucoseRangeSchedule(rawValue: rawValue)
@@ -58,6 +81,7 @@ extension LoopSettings: RawRepresentable {
 
         self.maximumBasalRatePerHour = rawValue["maximumBasalRatePerHour"] as? Double
 
+        self.maximumInsulinOnBoard = rawValue["maximumInsulinOnBoard"] as? Double
         self.maximumBolus = rawValue["maximumBolus"] as? Double
 
         if let rawThreshold = rawValue["minimumBGGuard"] as? GlucoseThreshold.RawValue {
@@ -73,11 +97,14 @@ extension LoopSettings: RawRepresentable {
         var raw: RawValue = [
             "version": LoopSettings.version,
             "dosingEnabled": dosingEnabled,
+            "bolusEnabled": bolusEnabled,
+            "pumpDetached": pumpDetached,
             "retrospectiveCorrectionEnabled": retrospectiveCorrectionEnabled
         ]
 
         raw["glucoseTargetRangeSchedule"] = glucoseTargetRangeSchedule?.rawValue
         raw["maximumBasalRatePerHour"] = maximumBasalRatePerHour
+        raw["maximumInsulinOnBoard"] = maximumInsulinOnBoard
         raw["maximumBolus"] = maximumBolus
         raw["minimumBGGuard"] = suspendThreshold?.rawValue
 

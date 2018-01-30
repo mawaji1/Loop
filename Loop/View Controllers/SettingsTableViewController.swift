@@ -69,6 +69,10 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
         super.viewDidDisappear(animated)
 
         dataManager.rileyLinkManager.setDeviceScanningEnabled(false)
+        // TODO(Erik): Do not upload every time we exit settings.
+        if let uploader = dataManager.remoteDataManager.nightscoutService.uploader {
+            UserDefaults.standard.uploadProfile(uploader: uploader)
+        }
     }
 
     deinit {
@@ -96,6 +100,7 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
 
     fileprivate enum LoopRow: Int, CaseCountable {
         case dosing = 0
+        case bolus
         case preferredInsulinDataSource
         case diagnostic
     }
@@ -117,11 +122,13 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
         case glucoseTargetRange = 0
         case suspendThreshold
         case insulinModel
+        case minBasalRate
         case basalRate
         case carbRatio
         case insulinSensitivity
         case maxBasal
         case maxBolus
+        case maxInsulinOnBoard
     }
 
     fileprivate enum ServiceRow: Int, CaseCountable {
@@ -206,6 +213,15 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
 
                 switchCell.switch?.addTarget(self, action: #selector(dosingEnabledChanged(_:)), for: .valueChanged)
 
+                return switchCell
+            case .bolus:
+                let switchCell = tableView.dequeueReusableCell(withIdentifier: SwitchTableViewCell.className, for: indexPath) as! SwitchTableViewCell
+                
+                switchCell.switch?.isOn = dataManager.loopManager.settings.bolusEnabled
+                switchCell.textLabel?.text = NSLocalizedString("Automated Bolus", comment: "The title text for the automated bolus enabled switch cell")
+                
+                switchCell.switch?.addTarget(self, action: #selector(bolusEnabledChanged(_:)), for: .valueChanged)
+                
                 return switchCell
             case .preferredInsulinDataSource:
                 let cell = tableView.dequeueReusableCell(withIdentifier: ConfigCellIdentifier, for: indexPath)
@@ -293,6 +309,14 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
                 } else {
                     configCell.detailTextLabel?.text = TapToSetString
                 }
+            case .minBasalRate:
+                configCell.textLabel?.text = NSLocalizedString("Minimum Basal Rates", comment: "The title text for the minimum basal rate schedule")
+                
+                if let minimumBasalRateSchedule = dataManager.loopManager.minimumBasalRateSchedule {
+                    configCell.detailTextLabel?.text = "\(minimumBasalRateSchedule.total()) U"
+                } else {
+                    configCell.detailTextLabel?.text = TapToSetString
+                }
             case .carbRatio:
                 configCell.textLabel?.text = NSLocalizedString("Carb Ratios", comment: "The title text for the carb ratio schedule")
 
@@ -358,6 +382,14 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
 
                 if let maxBolus = dataManager.loopManager.settings.maximumBolus {
                     configCell.detailTextLabel?.text = "\(valueNumberFormatter.string(from: NSNumber(value: maxBolus))!) U"
+                } else {
+                    configCell.detailTextLabel?.text = TapToSetString
+                }
+            case .maxInsulinOnBoard:
+                configCell.textLabel?.text = NSLocalizedString("Maximum IOB", comment: "The title text for the maximum insulin on board value")
+                
+                if let maxInsulinOnBoard = dataManager.loopManager.settings.maximumInsulinOnBoard {
+                    configCell.detailTextLabel?.text = "\(valueNumberFormatter.string(from: NSNumber(value: maxInsulinOnBoard))!) U"
                 } else {
                     configCell.detailTextLabel?.text = TapToSetString
                 }
@@ -500,7 +532,7 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
         case .configuration:
             let row = ConfigurationRow(rawValue: indexPath.row)!
             switch row {
-            case .maxBasal, .maxBolus:
+            case .maxBasal, .maxBolus, .maxInsulinOnBoard:
                 let vc: TextFieldTableViewController
 
                 switch row {
@@ -508,6 +540,8 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
                     vc = .maxBasal(dataManager.loopManager.settings.maximumBasalRatePerHour)
                 case .maxBolus:
                     vc = .maxBolus(dataManager.loopManager.settings.maximumBolus)
+                case .maxInsulinOnBoard:
+                    vc = .maxInsulinOnBoard(dataManager.loopManager.settings.maximumInsulinOnBoard)
                 default:
                     fatalError()
                 }
@@ -527,6 +561,17 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
                 scheduleVC.delegate = self
                 scheduleVC.title = NSLocalizedString("Basal Rates", comment: "The title of the basal rate profile screen")
 
+                show(scheduleVC, sender: sender)
+            case .minBasalRate:
+                let scheduleVC = SingleValueScheduleTableViewController()
+                
+                if let profile = dataManager.loopManager.minimumBasalRateSchedule {
+                    scheduleVC.timeZone = profile.timeZone
+                    scheduleVC.scheduleItems = profile.items
+                }
+                scheduleVC.delegate = self
+                scheduleVC.title = NSLocalizedString("Minimum Basal Rates", comment: "The title of the minimum basal rate profile screen")
+                
                 show(scheduleVC, sender: sender)
             case .carbRatio:
                 let scheduleVC = DailyQuantityScheduleTableViewController()
@@ -615,6 +660,8 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
                 }
             case .insulinModel:
                 performSegue(withIdentifier: InsulinModelSettingsViewController.className, sender: sender)
+
+
             }
         case .devices:
             let vc = RileyLinkDeviceTableViewController()
@@ -634,7 +681,7 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
                 vc.title = sender?.textLabel?.text
 
                 show(vc, sender: sender)
-            case .dosing:
+            case .dosing, .bolus:
                 break
             }
         case .services:
@@ -696,6 +743,10 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
 
     @objc private func dosingEnabledChanged(_ sender: UISwitch) {
         dataManager.loopManager.settings.dosingEnabled = sender.isOn
+    }
+    
+    @objc private func bolusEnabledChanged(_ sender: UISwitch) {
+        dataManager.loopManager.settings.bolusEnabled = sender.isOn
     }
 
     @objc private func deviceConnectionChanged(_ connectSwitch: UISwitch) {
@@ -818,6 +869,11 @@ final class SettingsTableViewController: UITableViewController, DailyValueSchedu
                 case .basalRate:
                     if let controller = controller as? SingleValueScheduleTableViewController {
                         dataManager.loopManager.basalRateSchedule = BasalRateSchedule(dailyItems: controller.scheduleItems, timeZone: controller.timeZone)
+                        AnalyticsManager.shared.didChangeBasalRateSchedule()
+                    }
+                case .minBasalRate:
+                    if let controller = controller as? SingleValueScheduleTableViewController {
+                        dataManager.loopManager.minimumBasalRateSchedule = BasalRateSchedule(dailyItems: controller.scheduleItems, timeZone: controller.timeZone)
                         AnalyticsManager.shared.didChangeBasalRateSchedule()
                     }
                 case .glucoseTargetRange:
@@ -958,6 +1014,12 @@ extension SettingsTableViewController: TextFieldTableViewControllerDelegate {
                         dataManager.loopManager.settings.maximumBolus = units
                     } else {
                         dataManager.loopManager.settings.maximumBolus = nil
+                    }
+                case .maxInsulinOnBoard:
+                    if let value = controller.value, let units = valueNumberFormatter.number(from: value)?.doubleValue {
+                        dataManager.loopManager.settings.maximumInsulinOnBoard = units
+                    } else {
+                        dataManager.loopManager.settings.maximumInsulinOnBoard = nil
                     }
                 default:
                     assertionFailure()

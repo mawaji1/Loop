@@ -7,7 +7,7 @@
 
 import HealthKit
 import LoopUI
-
+import xDripG5
 
 /// Describes the result of a CGM manager operation
 ///
@@ -47,6 +47,8 @@ protocol CGMManager: CustomDebugStringConvertible {
     var managedDataInterval: TimeInterval? { get }
 
     var sensorState: SensorDisplayable? { get }
+    
+    var latestG5Reading: Glucose? { get }
 
     /// The representation of the device for use in HealthKit
     var device: HKDevice? { get }
@@ -57,5 +59,9 @@ protocol CGMManager: CustomDebugStringConvertible {
     ///   - deviceManager: The device manager instance to use for fetching
     ///   - completion: A closure called when operation has completed
     func fetchNewDataIfNeeded(with deviceManager: DeviceDataManager, _ completion: @escaping (CGMResult) -> Void) -> Void
+}
+
+extension CGMManager {
+    var latestG5Reading: Glucose? { return nil }
 }
 

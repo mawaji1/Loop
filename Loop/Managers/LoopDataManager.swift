@@ -12,6 +12,7 @@ import GlucoseKit
 import HealthKit
 import InsulinKit
 import LoopKit
+import NightscoutUploadKit
 
 
 final class LoopDataManager {
@@ -36,11 +37,19 @@ final class LoopDataManager {
     unowned let delegate: LoopDataManagerDelegate
 
     private let logger: CategoryLogger
+    
+    var minimumBasalRateSchedule : BasalRateSchedule? {
+        didSet {
+            UserDefaults.standard.minimumBasalRateSchedule = minimumBasalRateSchedule
+            notify(forChange: .preferences)
+        }
+    }
 
     init(
         delegate: LoopDataManagerDelegate,
         lastLoopCompleted: Date?,
         lastTempBasal: DoseEntry?,
+        minimumBasalRateSchedule: BasalRateSchedule? = UserDefaults.standard.minimumBasalRateSchedule,
         basalRateSchedule: BasalRateSchedule? = UserDefaults.standard.basalRateSchedule,
         carbRatioSchedule: CarbRatioSchedule? = UserDefaults.standard.carbRatioSchedule,
         insulinModelSettings: InsulinModelSettings? = UserDefaults.standard.insulinModelSettings,
@@ -54,7 +63,7 @@ final class LoopDataManager {
         self.lastLoopCompleted = lastLoopCompleted
         self.lastTempBasal = lastTempBasal
         self.settings = settings
-
+        self.minimumBasalRateSchedule = minimumBasalRateSchedule
         let healthStore = HKHealthStore()
 
         carbStore = CarbStore(
@@ -86,6 +95,7 @@ final class LoopDataManager {
             self.dataAccessQueue.async {
                 self.carbEffect = nil
                 self.carbsOnBoard = nil
+                self.mealInformation = nil
                 self.notify(forChange: .carbs)
             }
         }
@@ -205,6 +215,7 @@ final class LoopDataManager {
     /// - Parameter timeZone: The time zone
     func setScheduleTimeZone(_ timeZone: TimeZone) {
         self.basalRateSchedule?.timeZone = timeZone
+        self.minimumBasalRateSchedule?.timeZone = timeZone
         self.carbRatioSchedule?.timeZone = timeZone
         self.insulinSensitivitySchedule?.timeZone = timeZone
         settings.glucoseTargetRangeSchedule?.timeZone = timeZone
@@ -291,6 +302,7 @@ final class LoopDataManager {
 
                     self.carbEffect = nil
                     self.carbsOnBoard = nil
+                    self.mealInformation = nil
 
                     defer {
                         self.notify(forChange: .carbs)
@@ -298,8 +310,12 @@ final class LoopDataManager {
 
                     do {
                         try self.update()
-
-                        completion(.success(try self.recommendBolus()))
+                        if let bolus = self.recommendedBolus {
+                            completion(.success(bolus.recommendation))
+                        } else {
+                            // TODO(Erik) Surface the real error here
+                            throw LoopError.missingDataError(details: "Cannot recommend Bolus", recovery: "Check your data")
+                        }
                     } catch let error {
                         completion(.failure(error))
                     }
@@ -311,6 +327,10 @@ final class LoopDataManager {
             }
         }
 
+        lastCarbChange = Date()
+        if carbUndoPossible == nil {
+            carbUndoPossible = carbEntry.startDate
+        }
         if let replacingEntry = replacingEntry {
             carbStore.replaceCarbEntry(replacingEntry, withEntry: carbEntry, resultHandler: addCompletion)
         } else {
@@ -325,7 +345,12 @@ final class LoopDataManager {
     ///   - date: The date the bolus was requested
     func addRequestedBolus(units: Double, at date: Date, completion: (() -> Void)?) {
         dataAccessQueue.async {
-            self.lastRequestedBolus = (units: units, date: date)
+            self.addInternalNote("Bolus Requested: \(units) \(date)")
+            self.carbUndoPossible = nil
+            self.recommendedBolus = nil
+            self.lastPendingBolus = nil
+            self.lastFailedBolus = nil
+            self.lastRequestedBolus = (units: units, date: date, reservoir: self.doseStore.lastReservoirValue)
             self.notify(forChange: .bolus)
 
             completion?()
@@ -338,17 +363,36 @@ final class LoopDataManager {
     ///   - units: The bolus amount, in units
     ///   - date: The date the bolus was enacted
     func addConfirmedBolus(units: Double, at date: Date, completion: (() -> Void)?) {
-        self.doseStore.addPendingPumpEvent(.enactedBolus(units: units, at: date)) {
+        let event = NewPumpEvent.enactedBolus(units: units, at: date)
+        self.doseStore.addPendingPumpEvent(event) {
             self.dataAccessQueue.async {
+                self.addInternalNote("Bolus Confirmed: \(units) \(date)")
+
+                let requestDate = self.lastRequestedBolus?.date ?? date
+                self.lastPendingBolus = (units: units, date: requestDate, reservoir: self.doseStore.lastReservoirValue, event: event)
                 self.lastRequestedBolus = nil
+                self.recommendedBolus = nil
                 self.insulinEffect = nil
                 self.notify(forChange: .bolus)
-
+                do {
+                    try self.update()
+                } catch let error {
+                    self.addDebugNote("Update after confirmed bolus failed \(error)")
+                }
                 completion?()
             }
         }
     }
 
+    func addFailedBolus(units: Double, at date: Date, error: Error, completion: (() -> Void)?) {
+        dataAccessQueue.async {
+            self.lastFailedBolus = (units: units, date: date, error: error)
+            self.recommendedBolus = nil
+            self.notify(forChange: .bolus)
+            completion?()
+        }
+    }
+    
     /// Adds and stores new pump events
     ///
     /// - Parameters:
@@ -412,6 +456,12 @@ final class LoopDataManager {
             self.setRecommendedTempBasal(completion)
         }
     }
+    
+//    func enactRecommendedBolus(_ completion: @escaping (_ error: Error?) -> Void) {
+//        dataAccessQueue.async {
+//            self.setRecommendedBolus(completion)
+//        }
+//    }
 
     /// Runs the "loop"
     ///
@@ -426,6 +476,12 @@ final class LoopDataManager {
             do {
                 try self.update()
 
+                do {
+                    try self.maybeSendFutureLowNotification()
+                } catch let error {
+                    self.addDebugNote("maybeSendFutureLowNotificationError: \(error)")
+                }
+                
                 if self.settings.dosingEnabled {
                     self.setRecommendedTempBasal { (error) -> Void in
                         self.lastLoopError = error
@@ -433,11 +489,23 @@ final class LoopDataManager {
                         if let error = error {
                             self.logger.error(error)
                         } else {
-                            self.lastLoopCompleted = Date()
+                            if self.settings.bolusEnabled {
+                                // Have to do a bolus first.
+                                self.setAutomatedBolus { (error) -> Void in
+                                    if let error = error {
+                                        self.logger.error(error)
+                                    } else {
+                                        self.lastLoopCompleted = Date()
+                                    }
+                                }
+                            } else {
+                                // No automatic Bolus, we are done.
+                                self.lastLoopCompleted = Date()
+                            }
                         }
                         self.notify(forChange: .tempBasal)
                     }
-
+                    
                     // Delay the notification until we know the result of the temp basal
                     return
                 } else {
@@ -446,7 +514,9 @@ final class LoopDataManager {
             } catch let error {
                 self.lastLoopError = error
             }
-
+            if let error = self.lastLoopError {
+                self.addDebugNote("Loop Error: \(error.localizedDescription)")
+            }
             self.notify(forChange: .tempBasal)
         }
     }
@@ -475,6 +545,11 @@ final class LoopDataManager {
         glucoseStore.getCachedGlucoseValues(start: Date(timeIntervalSinceNow: -recencyInterval)) { (values) in
             latestGlucoseDate = values.last?.startDate
             updateGroup.leave()
+        }
+        
+        // Must not depend on valid glucose data.
+        if mealInformation?.date.timeIntervalSinceNow ?? -TimeInterval.infinity < TimeInterval(minutes: -5) {
+            updateMealInformation(updateGroup, Date())
         }
         _ = updateGroup.wait(timeout: .distantFuture)
 
@@ -530,6 +605,29 @@ final class LoopDataManager {
                 updateGroup.leave()
             }
         }
+        
+        if insulinOnBoard == nil {
+            print("insulinOnBoard - update")
+            updateGroup.enter()
+            let now = Date()
+            doseStore.getInsulinOnBoardValues(start: retrospectiveStart, end: now) { (result) in
+                switch result {
+                case .success(let value):
+                    if let recentValue = value.closestPriorToDate(now) {
+                        print("getInsulinOnBoardValues - success - recent", recentValue)
+                        self.insulinOnBoard = recentValue
+                    } else {
+                        print("getInsulinOnBoardValues - success - empty using 0.0")
+                        self.insulinOnBoard = InsulinValue(startDate: now, value: 0.0)
+                    }
+                case .failure(let error):
+                    print("getInsulinOnBoardValues - error", error)
+                    self.logger.error(error)
+                    self.insulinOnBoard = nil
+                }
+                updateGroup.leave()
+            }
+        }
 
         _ = updateGroup.wait(timeout: .distantFuture)
 
@@ -574,6 +672,7 @@ final class LoopDataManager {
             }
         }
 
+        
         _ = updateGroup.wait(timeout: .distantFuture)
 
         if retrospectivePredictedGlucose == nil {
@@ -692,8 +791,16 @@ final class LoopDataManager {
     private var insulinEffect: [GlucoseEffect]? {
         didSet {
             predictedGlucose = nil
+            insulinOnBoard = nil
         }
     }
+    
+    fileprivate var insulinOnBoard: InsulinValue? {
+        didSet {
+            predictedGlucose = nil
+        }
+    }
+    
     private var glucoseMomentumEffect: [GlucoseEffect]? {
         didSet {
             predictedGlucose = nil
@@ -717,6 +824,7 @@ final class LoopDataManager {
     fileprivate var predictedGlucose: [GlucoseValue]? {
         didSet {
             recommendedTempBasal = nil
+            recommendedBolus = nil
         }
     }
     fileprivate var retrospectivePredictedGlucose: [GlucoseValue]? {
@@ -726,10 +834,16 @@ final class LoopDataManager {
     }
     fileprivate var recommendedTempBasal: (recommendation: TempBasalRecommendation, date: Date)?
 
+    fileprivate var recommendedBolus: (recommendation: BolusRecommendation, date: Date)?
+    
     fileprivate var carbsOnBoard: CarbValue?
 
     fileprivate var lastTempBasal: DoseEntry?
-    fileprivate var lastRequestedBolus: (units: Double, date: Date)?
+    
+    fileprivate var lastRequestedBolus: (units: Double, date: Date, reservoir: ReservoirValue?)?
+    fileprivate var lastPendingBolus: (units: Double, date: Date, reservoir: ReservoirValue?, event: NewPumpEvent)?
+    fileprivate var lastFailedBolus: (units: Double, date: Date, error: Error)?
+    
     fileprivate var lastLoopCompleted: Date? {
         didSet {
             NotificationManager.scheduleLoopNotRunningNotifications()
@@ -843,7 +957,7 @@ final class LoopDataManager {
     ///     - LoopError.pumpDataTooOld
     private func updatePredictedGlucoseAndRecommendedBasal() throws {
         dispatchPrecondition(condition: .onQueue(dataAccessQueue))
-
+        print("updatePredictedGlucoseAndRecommendedBasal")
         guard let glucose = glucoseStore.latestGlucose else {
             self.predictedGlucose = nil
             throw LoopError.missingDataError(details: "Glucose", recovery: "Check your CGM data source")
@@ -876,31 +990,67 @@ final class LoopDataManager {
 
         guard let
             maxBasal = settings.maximumBasalRatePerHour,
+            let maximumInsulinOnBoard = settings.maximumInsulinOnBoard,
             let glucoseTargetRange = settings.glucoseTargetRangeSchedule,
             let insulinSensitivity = insulinSensitivitySchedule,
+            let minBasalRates = minimumBasalRateSchedule,
             let basalRates = basalRateSchedule,
             let model = insulinModelSettings?.model
         else {
             throw LoopError.configurationError("Check settings")
         }
+        
+        guard let insulinOnBoard = insulinOnBoard
+            else {
+                throw LoopError.missingDataError(details: "Insulin on Board not available (updatePredictedGlucoseAndRecommendedBasal)", recovery: "Pump data up to date?")
+        }
+        
+//        guard cgmCalibrated else {
+//            throw LoopError.missingDataError(details: "CGM", recovery: "CGM Recently calibrated")
+//        }
 
-        guard
-            lastRequestedBolus == nil,  // Don't recommend changes if a bolus was just set
-            let tempBasal = predictedGlucose.recommendedTempBasal(
+        let tempBasal = predictedGlucose.recommendedTempBasal(
                 to: glucoseTargetRange,
                 suspendThreshold: settings.suspendThreshold?.quantity,
                 sensitivity: insulinSensitivity,
                 model: model,
+                minBasalRates: minBasalRates,
                 basalRates: basalRates,
                 maxBasalRate: maxBasal,
-                lastTempBasal: lastTempBasal
+                insulinOnBoard: insulinOnBoard.value,
+                maxInsulinOnBoard: maximumInsulinOnBoard,
+                lastTempBasal: lastTempBasal,
+                lowerOnly: settings.bolusEnabled,
+                minimumProgrammableIncrementPerUnit: settings.insulinIncrementPerUnit
             )
-        else {
+        
+        // Don't recommend changes if a bolus was just set
+        if lastRequestedBolus == nil && tempBasal != nil {
+            recommendedTempBasal = (recommendation: tempBasal!, date: Date())
+        } else {
+            print("updatePredictedGlucoseAndRecommendedBasal - Bolus or !tempBasal")
             recommendedTempBasal = nil
-            return
         }
-
-        recommendedTempBasal = (recommendation: tempBasal, date: Date())
+        
+        do {
+            recommendedBolus = (recommendation: try recommendBolus(), date: Date())
+        } catch let error {
+            // TODO(Erik): Surface error
+            _ = error
+            print("updatePredictedGlucoseAndRecommendedBasal - Bolus error", error)
+            recommendedBolus = nil
+        }
+        if lastRequestedBolus != nil {
+            print("updatePredictedGlucoseAndRecommendedBasal - Bolus ongoing")
+            recommendedBolus = nil
+        }
+        
+        if let remaining = pumpDetachedRemaining() {
+            print("updatePredictedGlucoseAndRecommendedBasal - Pump Detached!")
+            recommendedTempBasal = (recommendation: TempBasalRecommendation(unitsPerHour: 0.025, duration: remaining), date: Date())
+            recommendedBolus = nil
+        }
+        
     }
 
     /// - Returns: A bolus recommendation from the current data
@@ -914,13 +1064,19 @@ final class LoopDataManager {
         guard
             let predictedGlucose = predictedGlucose,
             let maxBolus = settings.maximumBolus,
+            let maximumInsulinOnBoard = settings.maximumInsulinOnBoard,
             let glucoseTargetRange = settings.glucoseTargetRangeSchedule,
             let insulinSensitivity = insulinSensitivitySchedule,
             let model = insulinModelSettings?.model
         else {
             throw LoopError.configurationError("Check Settings")
         }
-
+        
+        guard let insulinOnBoard = insulinOnBoard
+            else {
+                throw LoopError.missingDataError(details: "Insulin on Board not available (recommendBolus)", recovery: "Pump data up to date?")
+        }
+        
         guard let glucoseDate = predictedGlucose.first?.startDate else {
             throw LoopError.missingDataError(details: "No glucose data found", recovery: "Check your CGM source")
         }
@@ -937,7 +1093,10 @@ final class LoopDataManager {
             sensitivity: insulinSensitivity,
             model: model,
             pendingInsulin: pendingInsulin,
-            maxBolus: maxBolus
+            maxBolus: maxBolus,
+            insulinOnBoard: insulinOnBoard.value,
+            maxInsulinOnBoard: maximumInsulinOnBoard,
+            minimumProgrammableIncrementPerUnit: settings.insulinIncrementPerUnit
         )
 
         return recommendation
@@ -971,6 +1130,468 @@ final class LoopDataManager {
             }
         }
     }
+    
+    /// *This method should only be called from the `dataAccessQueue`*
+    private var lastAutomaticBolus : Date? = nil
+    private var lastCarbChange : Date? = nil
+    
+    private func roundInsulinUnits(_ units: Double) -> Double {
+        return round(units * settings.insulinIncrementPerUnit)/settings.insulinIncrementPerUnit
+    }
+    
+    private func setAutomatedBolus(_ completion: @escaping (_ error: Error?) -> Void) {
+        dispatchPrecondition(condition: .onQueue(dataAccessQueue))
+        
+        
+        guard let recommendedBolus = self.recommendedBolus else {
+            completion(nil)
+            print("setAutomatedBolus - recommendation not available")
+            return
+        }
+        
+        let safeAmount = roundInsulinUnits(recommendedBolus.recommendation.amount * settings.automatedBolusRatio)
+        if safeAmount < settings.automatedBolusThreshold {
+            completion(nil)
+            print("setAutomatedBolus - recommendation below threshold")
+            return
+        }
+        
+        guard abs(recommendedBolus.date.timeIntervalSinceNow) < TimeInterval(minutes: 5) else {
+            completion(LoopError.recommendationExpired(date: recommendedBolus.date))
+            print("setAutomatedBolus - recommendation too old")
+            return
+        }
+        
+        if let lastAutomaticBolus = self.lastAutomaticBolus, abs(lastAutomaticBolus.timeIntervalSinceNow) < settings.automaticBolusInterval {
+            print("setAutomatedBolus - last automatic bolus too close")
+            completion(nil)
+            return
+        }
+        
+        if let carbChange = lastCarbChange {
+            guard abs(carbChange.timeIntervalSinceNow) > TimeInterval(minutes: 2) else {
+                print("setAutomatedBolus - last carbchange too close")
+                completion(nil)
+                return
+            }
+        }
+        
+        if lastRequestedBolus != nil {
+            print("setAutomatedBolus - lastRequestedBolus still in progress", lastRequestedBolus as Any)
+            completion(nil)
+            return
+        }
+        // copy bolus with "safe" ratio
+        let automatedBolus = (recommendation: BolusRecommendation(amount: safeAmount , pendingInsulin:  recommendedBolus.recommendation.pendingInsulin, notice: recommendedBolus.recommendation.notice ), date: recommendedBolus.date)
+        addInternalNote("AutomatedBolus: \(automatedBolus)")
+        self.recommendedBolus = nil
+        
+        delegate.loopDataManager(self, didRecommendBolus: automatedBolus) { (result) in
+            self.dataAccessQueue.async {
+                switch result {
+                case .success(let bolus):
+                    // TODO(Erik) Do we need to do something with the bolus here?
+                    // self.lastTempBasal = basal
+                    _ = bolus
+                    self.recommendedBolus = nil
+                    
+                    completion(nil)
+                case .failure(let error):
+                    completion(error)
+                }
+            }
+        }
+    }
+    
+    // TREATMENT STATE
+    
+    fileprivate func getTreatmentInformation() -> TreatmentInformation? {
+        let now = Date()
+        var treatment : TreatmentInformation?
+        
+        var allowed : Bool = false
+        var message = ""
+        if let reservoir = doseStore.lastReservoirValue {
+            if reservoir.startDate.timeIntervalSinceNow >= TimeInterval(minutes: -15) {
+                allowed = true
+            } else {
+                message = "Pump data too old"
+            }
+        } else {
+            message = "Pump data not available"
+        }
+        // TODO(Erik): sent, failed, maybefailed are missing
+        if let lastRequestedBolus = lastRequestedBolus {
+            // Bolus in Progress
+            treatment = TreatmentInformation(state: .sent,
+                                             units: lastRequestedBolus.units,
+                                             carbs: 0.0,
+                                             date: now,
+                                             sent: lastRequestedBolus.date,
+                                             allowed: false,
+                                             message: "",
+                                             reservoir: nil)
+            
+        } else if let lastPendingBolus = lastPendingBolus, let dose = lastPendingBolus.event.dose, dose.endDate.timeIntervalSinceNow > TimeInterval(0)  {
+            if let start = lastPendingBolus.reservoir, let current = doseStore.lastReservoirValue {
+               let drop = roundInsulinUnits(start.unitVolume - current.unitVolume)
+               let units = roundInsulinUnits(lastPendingBolus.units)
+               message = "\(drop)/\(units) U"
+            }
+            treatment = TreatmentInformation(state: .pending,  // TODO(Erik): Pending and wait for real conf.
+                units: lastPendingBolus.units,
+                carbs: 0.0,
+                date: lastPendingBolus.date,
+                sent: nil,
+                allowed: false,
+                message: message,
+                reservoir: nil)
+            
+            
+        } else if let lastPendingBolus = lastPendingBolus, lastPendingBolus.date.timeIntervalSinceNow > TimeInterval(minutes: -15)  {
+            treatment = TreatmentInformation(state: .success,  // TODO(Erik): Pending and wait for real conf.
+                                             units: lastPendingBolus.units,
+                                             carbs: 0.0,
+                                             date: lastPendingBolus.date,
+                                             sent: nil,
+                                             allowed: allowed,
+                                             message: message,
+                                             reservoir: nil)
+            
+        } else if let lastFailedBolus = lastFailedBolus, lastFailedBolus.date.timeIntervalSinceNow > TimeInterval(minutes: -15)  {
+            treatment = TreatmentInformation(state: .failed,
+                                             units: lastFailedBolus.units,
+                                             carbs: 0.0,
+                                             date: lastFailedBolus.date,
+                                             sent: nil,
+                                             allowed: allowed,
+                                             message: lastFailedBolus.error.localizedDescription,
+                                             reservoir: nil)
+            
+        } else if let recommended = recommendedBolus, recommended.recommendation.amount >= settings.minimumRecommendedBolus {
+            treatment = TreatmentInformation(state: .recommended,
+                                             units: recommended.recommendation.amount,
+                                             carbs: 0.0,
+                                             date: recommended.date,
+                                             sent: nil,
+                                             allowed: allowed,
+                                             message: message,
+                                             reservoir: nil)
+        } else if let low = lastLowNotification, low.date.timeIntervalSinceNow > TimeInterval(minutes: -15) {
+            treatment = TreatmentInformation(state: .recommended,
+                                             units: 0.0,
+                                             carbs: low.carbs,
+                                             date: low.date,
+                                             sent: nil,
+                                             allowed: allowed,
+                                             message: message,
+                                             reservoir: nil)
+            
+//        } else if let recommended = recommendedBolus, recommended.recommendation.netAmount < 0,
+//            let carbRatio = carbRatioSchedule?.value(at: recommended.date) {
+//            
+//            let carbs = round(abs(recommended.recommendation.netAmount) * carbRatio / 5) * 5
+//            treatment = TreatmentInformation(state: .recommended,
+//                                             units: 0.0,
+//                                             carbs: carbs,
+//                                             date: recommended.date,
+//                                             sent: nil,
+//                                             allowed: allowed,
+//                                             message: message,
+//                                             reservoir: nil)
+            
+        } else if !allowed {
+            treatment = TreatmentInformation(state: .prohibited,
+                                             units: 0.0,
+                                             carbs: 0.0,
+                                             date: now,
+                                             sent: nil,
+                                             allowed: allowed,
+                                             message: message,
+                                             reservoir: nil)
+        } else {
+            treatment = TreatmentInformation(state: .none, units: 0, carbs: 0.0, date: now,
+                          sent: Date(), allowed: allowed,
+                          message: message,
+                          reservoir: nil)
+        }
+        return treatment
+    }
+    
+    // PUMP DETACH MODE
+    fileprivate var pumpDetachedMode : Date? {
+        didSet {
+            UserDefaults.standard.pumpDetachedMode = pumpDetachedMode
+            
+            notify(forChange: .preferences)
+        }
+    }
+    
+    public func enablePumpDetachedMode() {
+        dataAccessQueue.async {
+            self.pumpDetachedMode = Date().addingTimeInterval(TimeInterval(minutes: 120)) // far future
+            // self.deviceDataManager.nightscoutDataManager.uploadNote(note: "Enabled Pump Detached Mode")
+        }
+    }
+    
+    public func disablePumpDetachedMode() {
+        dataAccessQueue.async {
+            self.pumpDetachedMode = nil
+            // self.deviceDataManager.nightscoutDataManager.uploadNote(note: "Disabled Pump Detached Mode")
+        }
+    }
+    
+    private func pumpDetachedRemaining() -> TimeInterval? {
+        dispatchPrecondition(condition: .onQueue(dataAccessQueue))
+        if let pumpDetachedMode = pumpDetachedMode {
+            let remaining = pumpDetachedMode.timeIntervalSinceNow
+            if remaining > TimeInterval(0) {
+                return remaining
+            } else {
+                self.pumpDetachedMode = nil
+            }
+        }
+        return nil
+    }
+    
+    // FOOD PICKS
+    typealias MealInformation = (date: Date, lastCarbEntry: CarbEntry?, picks: FoodPicks?, start: Date?, end: Date?, carbs: Double?, undoPossible: Bool)
+    
+    
+    fileprivate var mealInformation : MealInformation? = nil
+    
+    private func updateMealInformation(_ updateGroup: DispatchGroup, _ dataDate: Date) {
+        print("updateMealInformation")
+        dispatchPrecondition(condition: .onQueue(dataAccessQueue))
+        if let carbStore = self.carbStore {
+            let endDate = dataDate
+            let mealDate = endDate.addingTimeInterval(TimeInterval(minutes: -45))
+            
+            let undoPossibleDate = carbUndoPossible
+            updateGroup.enter()
+            carbStore.getCarbEntries(start: mealDate, end: endDate) { (result) in
+                
+                switch result {
+                case .success(let values):
+                    var mealStart = endDate
+                    var mealEnd = mealDate
+                    var carbs : Double = 0
+                    var allPicks = FoodPicks()
+                    for value in values {
+                        print("  updateMealInformation - v - ", value)
+                        mealStart = min(mealStart, value.startDate)
+                        mealEnd = max(value.startDate, mealStart)
+                        let picks = value.foodPicks()
+                        for pick in picks.picks {
+                            allPicks.append(pick)
+                        }
+                        print("  updateMealInformation - p - ", picks)
+                        if let lastpick = picks.last {
+                            mealEnd = max(lastpick.date, mealEnd)
+                        }
+                        carbs = carbs + picks.carbs
+                        
+                    }
+                    print("  updateMealInformation - carbs - ", carbs)
+                    var undoPossible = false
+                    if let undoPossibleDate = undoPossibleDate {
+                        undoPossible = undoPossibleDate <= mealEnd
+                    }
+                    self.mealInformation = (date: endDate, lastCarbEntry: values.last,
+                                            picks: allPicks,
+                                            start: mealStart, end: mealEnd, carbs: carbs, undoPossible: undoPossible)
+                case .failure(let error):
+                    print("updateMealInformation - Error", error as Any)
+                    self.mealInformation = (date: endDate, lastCarbEntry: nil, picks: nil, start: nil, end: nil, carbs: nil, undoPossible: false)
+                    
+                }
+                print("updateMealInformation - ", self.mealInformation as Any)
+                updateGroup.leave()
+            }
+        }
+    }
+    
+    private var manualGlucoseEntered = false  // TODO switch to false
+    private var carbUndoPossible : Date? = nil  // no undo after restart
+    
+    public func removeLastFoodPick() {
+        // TODO(Erik): This should have a completion to present an error (and not use DispatchGroup)
+        print("removeLastFoodPick")
+        let updateGroup = DispatchGroup.init()
+        updateGroup.enter()
+        
+        dataAccessQueue.async {
+            
+            guard let lastCarbEntry = self.mealInformation?.lastCarbEntry,
+                let undoPossible = self.mealInformation?.undoPossible,
+                let carbStore = self.carbStore,
+                undoPossible
+                else {
+                    self.addDebugNote("removeLastFoodPick - not possible.")
+                    updateGroup.leave()
+                    return
+            }
+            
+            print("removeLastFoodPick - original \(lastCarbEntry)")
+            self.addDebugNote("removeLastFoodPick - original \(lastCarbEntry)")
+            
+            carbStore.deleteCarbEntry(lastCarbEntry) { (success, error) in
+                self.dataAccessQueue.async {
+                    if success {
+                        self.carbEffect = nil
+                        self.carbsOnBoard = nil
+                        self.lastAutomaticBolus = nil
+                        self.mealInformation = nil
+                        defer {
+                            self.notify(forChange: .carbs)
+                        }
+                    }
+                    if error != nil {
+                        print("deleteCarbEntry error", error as Any)
+                    }
+                    updateGroup.leave()
+                }
+            }
+        }
+        updateGroup.wait()
+    }
+    
+    // VALID GLUCOSE HELPERS
+    public func getValidGlucose() -> GlucoseValue? {
+        if let
+            glucose = self.glucoseStore?.latestGlucose {
+            let startDate = Date()
+            
+            if startDate.timeIntervalSince(glucose.startDate) <= recencyInterval {
+                return glucose
+            }
+        }
+        return nil
+    }
+    
+    private func getValidPredictedGlucose() -> [GlucoseValue]? {
+        // If Loop is running
+        if let predicted_glucose = self.predictedGlucose,
+            let predictedInterval = predicted_glucose.first?.startDate.timeIntervalSinceNow,
+            abs(predictedInterval) <= recencyInterval {
+            if predicted_glucose.count == 0 {
+                return nil
+            }
+            return predicted_glucose
+        }
+        return nil
+    }
+    
+    /// Disable any active workout glucose targets
+//    private var cgmCalibrated = true
+//    func updateCgmCalibrationState(_ calibrated: Bool) {
+//        cgmCalibrated = calibrated
+//    }
+//
+    
+    private var lastLowNotification : (date: Date, value: Double, carbs: Double)?
+    private let lowWarningMinutesLookAhead : Double = 30
+    private func maybeSendFutureLowNotification() throws {
+        // TODO sendGlucoseFutureLowNotifications if appropriate
+        guard let
+            glucoseTargetRange = settings.glucoseTargetRangeSchedule,
+            let carbRatioRange = carbRatioSchedule,
+            let insulinSensitivity = insulinSensitivitySchedule,
+            let predictedGlucose = predictedGlucose,
+            let lowWarningThreshold = settings.suspendThreshold?.quantity.doubleValue(for: glucoseTargetRange.unit),
+            predictedGlucose.count > 0
+            else {
+                throw LoopError.missingDataError(details: "maybeSendFutureLowNotification Loop configuration data not set", recovery: nil)
+        }
+        
+        
+        let currentDate = Date()
+        let unit = glucoseTargetRange.unit
+        //let overall_min = glucose.value(
+        let min = lowWarningThreshold
+        // let min = glucoseTargetRange.value(at: currentDate).minValue
+        var minDate : Date? = nil
+        var lowDate : Date? = nil
+        var minValue : Double = min
+        var lastValue : Double?
+        for p in predictedGlucose {
+            let future = p.startDate
+            let value = p.quantity.doubleValue(for: unit)
+            //let target = glucoseTargetRange.value(at: future).minValue
+            if future.timeIntervalSince(currentDate) > TimeInterval(minutes: lowWarningMinutesLookAhead) {
+                break
+            }
+            
+            if value < minValue {
+                if lowDate == nil {
+                    lowDate = future
+                }
+                minDate = future
+                
+                minValue = value
+            }
+            
+            lastValue = value
+        }
+        
+        
+        
+        let currentGlucose = predictedGlucose.first!.quantity.doubleValue(for: unit)
+        if currentGlucose > 250 {
+            if self.lastLowNotification != nil {
+                self.addInternalNote("sendGlucoseFutureLowNotifications clear because currentGlucose > 250 \(currentGlucose)")
+                NotificationManager.clearGlucoseFutureLowNotifications()
+                self.lastLowNotification = nil
+            }
+            return
+        } else if currentGlucose < min {
+            // handled by DexCom.
+            return
+        }
+        
+        if let lastValue = lastValue, lastValue > min {
+            // no warning if we eventually get over it.
+            if self.lastLowNotification != nil {
+                self.addInternalNote("sendGlucoseFutureLowNotifications clear because lastValue > min \(lastValue) \(min)")
+                NotificationManager.clearGlucoseFutureLowNotifications()
+                
+                self.lastLowNotification = nil
+            }
+            return
+        }
+        
+        if let lowDate = lowDate, let minDate = minDate  {
+            let target = glucoseTargetRange.value(at: minDate).minValue
+            let insulinSensitivity = insulinSensitivity.quantity(at: minDate).doubleValue(for: glucoseTargetRange.unit)
+            let carbRatio = carbRatioRange.quantity(at: minDate).doubleValue(for: HKUnit.gram())
+            let maxDelta = target - minValue
+            let carbs = maxDelta / insulinSensitivity * carbRatio
+            
+            // Always round up to next 10 carbs.
+            let roundedCarbs = round((carbs + 5) / 10) * 10
+            let minutes = Int(lowDate.timeIntervalSince(currentDate) / 60)
+            addInternalNote("sendGlucoseFutureLowNotifications: Low in \(minutes) minutes, target: \(target), threshold: \(min), minimal glucose: \(minValue), carbs: \(roundedCarbs), last: \(String(describing: lastLowNotification))")
+            if minutes > 0 {
+                
+                if let lastLow = lastLowNotification, lowDate > lastLow.date, minValue > lastLow.value {
+                    // too close or going up again.
+                    addInternalNote("sendGlucoseFutureLowNotifications too close")
+                } else {
+                    addInternalNote( "sendGlucoseFutureLowNotifications sent")
+                    NotificationManager.sendGlucoseFutureLowNotifications(currentDate: currentDate, lowDate: lowDate, target: round(min), glucose: round(minValue), carbs: roundedCarbs)
+                }
+                lastLowNotification = (lowDate, minValue, roundedCarbs)
+            }
+        } else {
+            if self.lastLowNotification != nil {
+                addInternalNote("sendGlucoseFutureLowNotifications clear because no lowDate or minDate")
+                NotificationManager.clearGlucoseFutureLowNotifications()
+                
+                self.lastLowNotification = nil
+            }
+        }
+    }
+    
 }
 
 
@@ -979,6 +1600,8 @@ protocol LoopState {
     /// The last-calculated carbs on board
     var carbsOnBoard: CarbValue? { get }
 
+    var insulinOnBoard: InsulinValue? { get }
+    
     /// An error in the current state of the loop, or one that happened during the last attempt to loop.
     var error: Error? { get }
 
@@ -991,12 +1614,24 @@ protocol LoopState {
     /// The last set temp basal
     var lastTempBasal: DoseEntry? { get }
 
+    var lastRequestedBolus: (units: Double, date: Date, reservoir: ReservoirValue?)? { get }
+    
+    var pumpDetachedMode: Date? { get }
+    
+    var mealInformation: LoopDataManager.MealInformation? { get }
+    
+    var treatmentInformation: TreatmentInformation? { get }
+    
+    var validGlucose: GlucoseValue? { get }
+    
     /// The calculated timeline of predicted glucose values
     var predictedGlucose: [GlucoseValue]? { get }
 
     /// The recommended temp basal based on predicted glucose
     var recommendedTempBasal: (recommendation: TempBasalRecommendation, date: Date)? { get }
 
+    var recommendedBolus: (recommendation: BolusRecommendation, date: Date)? { get }
+    
     /// The retrospective prediction over a recent period of glucose samples
     var retrospectivePredictedGlucose: [GlucoseValue]? { get }
 
@@ -1034,6 +1669,11 @@ extension LoopDataManager {
             dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
             return loopDataManager.carbsOnBoard
         }
+        
+        var insulinOnBoard: InsulinValue? {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.insulinOnBoard
+        }
 
         var error: Error? {
             dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
@@ -1054,7 +1694,32 @@ extension LoopDataManager {
             dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
             return loopDataManager.lastTempBasal
         }
-
+        
+        var lastRequestedBolus: (units: Double, date: Date, reservoir: ReservoirValue?)? {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.lastRequestedBolus
+        }
+        
+        var pumpDetachedMode: Date? {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.pumpDetachedMode
+        }
+        
+        var mealInformation: MealInformation?  {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.mealInformation
+        }
+        
+        var treatmentInformation: TreatmentInformation? {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.getTreatmentInformation()
+        }
+        
+        var validGlucose: GlucoseValue? {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.getValidGlucose()
+        }
+        
         var predictedGlucose: [GlucoseValue]? {
             dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
             return loopDataManager.predictedGlucose
@@ -1063,6 +1728,11 @@ extension LoopDataManager {
         var recommendedTempBasal: (recommendation: TempBasalRecommendation, date: Date)? {
             dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
             return loopDataManager.recommendedTempBasal
+        }
+        
+        var recommendedBolus: (recommendation: BolusRecommendation, date: Date)? {
+            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
+            return loopDataManager.recommendedBolus
         }
 
         var retrospectivePredictedGlucose: [GlucoseValue]? {
@@ -1075,7 +1745,10 @@ extension LoopDataManager {
         }
 
         func recommendBolus() throws -> BolusRecommendation {
-            return try loopDataManager.recommendBolus()
+            if let bolus = loopDataManager.recommendedBolus {
+                return bolus.recommendation
+            }
+            throw LoopError.missingDataError(details: "Recommended Bolus data not available.", recovery: "Check you loop state.")
         }
     }
 
@@ -1115,37 +1788,24 @@ extension LoopDataManager {
                 "## LoopDataManager",
                 "settings: \(String(reflecting: manager.settings))",
                 "insulinCounteractionEffects: \(String(reflecting: manager.insulinCounteractionEffects))",
+                "insulinOnBoard: \(String(describing: state.insulinOnBoard))",
                 "predictedGlucose: \(state.predictedGlucose ?? [])",
                 "retrospectivePredictedGlucose: \(state.retrospectivePredictedGlucose ?? [])",
                 "recommendedTempBasal: \(String(describing: state.recommendedTempBasal))",
-                "lastBolus: \(String(describing: manager.lastRequestedBolus))",
+                "recommendedBolus: \(String(describing: state.recommendedBolus))",
+                "lastRequestedBolus: \(String(describing: state.lastRequestedBolus))",
+                "pumpDetachedMode: \(String(describing: state.pumpDetachedMode))",
+                "mealInformation: \(String(describing: state.mealInformation))",
+                "treatmentInformation: \(String(describing: state.treatmentInformation))",
+                "validGlucose: \(String(describing: state.validGlucose))",
                 "lastGlucoseChange: \(String(describing: manager.lastGlucoseChange))",
                 "retrospectiveGlucoseChange: \(String(describing: manager.retrospectiveGlucoseChange))",
                 "lastLoopCompleted: \(String(describing: state.lastLoopCompleted))",
                 "lastTempBasal: \(String(describing: state.lastTempBasal))",
-                "carbsOnBoard: \(String(describing: state.carbsOnBoard))"
+                "carbsOnBoard: \(String(describing: state.carbsOnBoard))",
+                "error: \(String(describing: state.error))"
             ]
-            var loopError = state.error
             
-            // TODO: this should be moved to doseStore.generateDiagnosticReport
-            self.doseStore.insulinOnBoard(at: Date()) { (result) in
-
-                let insulinOnBoard: InsulinValue?
-                
-                switch result {
-                case .success(let value):
-                    insulinOnBoard = value
-                case .failure(let error):
-                    insulinOnBoard = nil
-                    
-                    if loopError == nil {
-                        loopError = error
-                    }
-                }
-                
-                entries.append("insulinOnBoard: \(String(describing: insulinOnBoard))")
-                entries.append("error: \(String(describing: loopError))")
-                entries.append("")
 
                 self.glucoseStore.generateDiagnosticReport { (report) in
                     entries.append(report)
@@ -1163,7 +1823,7 @@ extension LoopDataManager {
                         }
                     }
                 }
-            }
+            
         }
     }
 }
@@ -1186,4 +1846,15 @@ protocol LoopDataManagerDelegate: class {
     ///   - completion: A closure called once on completion
     ///   - result: The enacted basal
     func loopDataManager(_ manager: LoopDataManager, didRecommendBasalChange basal: (recommendation: TempBasalRecommendation, date: Date), completion: @escaping (_ result: Result<DoseEntry>) -> Void) -> Void
+    
+    /// Informs the delegate that an immediate bolus is recommended
+    ///
+    /// - Parameters:
+    ///   - manager: The manager
+    ///   - basal: The new recommended bolus
+    ///   - completion: A closure called once on completion
+    ///   - result: The enacted bolus
+    func loopDataManager(_ manager: LoopDataManager, didRecommendBolus bolus: (recommendation: BolusRecommendation, date: Date), completion: @escaping (_ result: Result<DoseEntry>) -> Void) -> Void
+    
+    func loopDataManager(_ manager: LoopDataManager, uploadTreatments treatments: [NightscoutTreatment], completion: @escaping (_ notUploaded: [NightscoutTreatment]) -> Void) -> Void
 }
