@@ -1176,14 +1176,15 @@ final class LoopDataManager {
             }
         }
         
-        if lastRequestedBolus != nil {
-            print("setAutomatedBolus - lastRequestedBolus still in progress", lastRequestedBolus as Any)
+        if lastRequestedBolus != nil || lastPendingBolus != nil {
+            print("setAutomatedBolus - lastRequestedBolus or lastPendingBolus still in progress",
+                  lastRequestedBolus as Any, lastPendingBolus as Any)
             completion(nil)
             return
         }
         // copy bolus with "safe" ratio
         let automatedBolus = (recommendation: BolusRecommendation(amount: safeAmount , pendingInsulin:  recommendedBolus.recommendation.pendingInsulin, notice: recommendedBolus.recommendation.notice ), date: recommendedBolus.date)
-        addInternalNote("AutomatedBolus: \(automatedBolus)")
+        addInternalNote("AutomatedBolus: \(automatedBolus), l")
         self.recommendedBolus = nil
         
         delegate.loopDataManager(self, didRecommendBolus: automatedBolus) { (result) in
@@ -1193,6 +1194,7 @@ final class LoopDataManager {
                     // TODO(Erik) Do we need to do something with the bolus here?
                     // self.lastTempBasal = basal
                     _ = bolus
+                    self.addInternalNote("AutomatedBolus - success: \(bolus)")
                     self.recommendedBolus = nil
                     
                     completion(nil)
@@ -1440,7 +1442,6 @@ final class LoopDataManager {
                     if success {
                         self.carbEffect = nil
                         self.carbsOnBoard = nil
-                        self.lastAutomaticBolus = nil
                         self.mealInformation = nil
                         defer {
                             self.notify(forChange: .carbs)
