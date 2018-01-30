@@ -106,7 +106,11 @@ final class AnalyticsManager: IdentifiableClass {
     }
 
     func didChangeLoopSettings(from oldValue: LoopSettings, to newValue: LoopSettings) {
-        logEvent("Loop settings change")
+        if oldValue.rawValue.debugDescription != newValue.rawValue.debugDescription {
+            return
+        }
+        logEvent("Loop settings change \(oldValue.rawValue.debugDescription) \(newValue.rawValue.debugDescription)")
+        
 
         if newValue.maximumBasalRatePerHour != oldValue.maximumBasalRatePerHour {
             logEvent("Maximum basal rate change")
