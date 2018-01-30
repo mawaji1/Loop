@@ -1,6 +1,6 @@
 # New Features in this Fork
 
-see TODO for planned features
+see [TODO](/TODO.md) for planned features
 
 ## Automated Bolus Core Infrastructure
 
