@@ -17,6 +17,10 @@ public enum FakeEventTypes: UInt8 {
     case bgReceived = 0xfb
 }
 
+final class PendingTreatmentsQueueManager: IdentifiableClass {
+    static let queue: DispatchQueue = DispatchQueue(label: "com.loopkit.loop.UserDefaults.pendingTreatmentsQueue", qos: .utility)
+}
+
 // Bridges support for MinimedKit data types
 extension LoopDataManager {
     /**
@@ -112,11 +116,16 @@ extension LoopDataManager {
     // Modifications to handle more logging events from App in Nightscout
     //
     private func addFakeEvent(_ type: FakeEventTypes, _ note: String) {
-        UserDefaults.standard.pendingTreatments.append((type: Int(type.rawValue), date: Date(), note: note))
-        uploadTreatments()
+        let event = (type: Int(type.rawValue), date: Date(), note: note)
+        PendingTreatmentsQueueManager.queue.async {
+            print("UPLOADING EVENT", type, note)
+            UserDefaults.standard.pendingTreatments.append(event)
+            self.uploadTreatments()
+        }
     }
     
     private func uploadTreatments() {
+        dispatchPrecondition(condition: .onQueue(PendingTreatmentsQueueManager.queue))
         var treatments = [NightscoutTreatment]()
         let author = "loop://\(UIDevice.current.name)"
         // TODO(Erik) needs locking
@@ -153,12 +162,16 @@ extension LoopDataManager {
                 treatments.append(treatment)
             }
         }
-
+        print("UPLOADING", treatments as Any)
         delegate.loopDataManager(self, uploadTreatments: treatments) { (notUploadedTreatments) in
-            if notUploadedTreatments.count > 0 {
+            PendingTreatmentsQueueManager.queue.async {
+                print("UPLOADING DONE", notUploadedTreatments)
+                if notUploadedTreatments.count > 0 {
                 // TODO(Erik): This is a bit messed up - and should probably rather live in the delegate
-                for pending in pendingTreatments {
-                    UserDefaults.standard.pendingTreatments.append(pending)
+                
+                    for pending in pendingTreatments {
+                        UserDefaults.standard.pendingTreatments.append(pending)
+                    }
                 }
             }
         }
