@@ -1185,6 +1185,7 @@ final class LoopDataManager {
         let automatedBolus = (recommendation: BolusRecommendation(amount: safeAmount , pendingInsulin:  recommendedBolus.recommendation.pendingInsulin, notice: recommendedBolus.recommendation.notice ), date: recommendedBolus.date)
         addInternalNote("AutomatedBolus: \(automatedBolus), l")
         self.recommendedBolus = nil
+        lastAutomaticBolus = Date()
         
         delegate.loopDataManager(self, didRecommendBolus: automatedBolus) { (result) in
             self.dataAccessQueue.async {
