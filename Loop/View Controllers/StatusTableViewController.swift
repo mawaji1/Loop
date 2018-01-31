@@ -390,9 +390,6 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
         }
 
         workoutMode = deviceManager.loopManager.settings.glucoseTargetRangeSchedule?.overrideEnabledForContext(.workout)
-        if pumpDetachedMode != nil {
-            workoutMode = true
-        }
         preMealMode = deviceManager.loopManager.settings.glucoseTargetRangeSchedule?.overrideEnabledForContext(.preMeal)
 
         reloadGroup.notify(queue: .main) {
