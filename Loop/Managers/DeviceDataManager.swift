@@ -1036,6 +1036,7 @@ extension DeviceDataManager: LoopDataManagerDelegate {
             case .failure(let error):
                 let logger = DiagnosticLogger.shared!.forCategory("NightscoutUploader")
                 logger.error(error)
+                print("UPLOADING delegate failed", error as Any)
                 completion(treatments)
             }
         }
