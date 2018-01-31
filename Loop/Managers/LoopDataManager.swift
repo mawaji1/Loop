@@ -374,6 +374,8 @@ final class LoopDataManager {
                 let requestDate = self.lastRequestedBolus?.date ?? date
                 self.lastPendingBolus = (units: units, date: requestDate, reservoir: self.doseStore.lastReservoirValue, event: event)
                 self.lastRequestedBolus = nil
+                self.lastFailedBolus = nil
+                self.lastAutomaticBolus = date  // keep this as a date, irrespective of automatic or not
                 self.recommendedBolus = nil
                 self.insulinEffect = nil
                 self.notify(forChange: .bolus)
@@ -390,6 +392,7 @@ final class LoopDataManager {
     func addFailedBolus(units: Double, at date: Date, error: Error, completion: (() -> Void)?) {
         dataAccessQueue.async {
             self.lastFailedBolus = (units: units, date: date, error: error)
+            self.lastPendingBolus = nil
             self.recommendedBolus = nil
             self.notify(forChange: .bolus)
             completion?()
@@ -460,12 +463,6 @@ final class LoopDataManager {
         }
     }
     
-//    func enactRecommendedBolus(_ completion: @escaping (_ error: Error?) -> Void) {
-//        dataAccessQueue.async {
-//            self.setRecommendedBolus(completion)
-//        }
-//    }
-
     /// Runs the "loop"
     ///
     /// Executes an analysis of the current data, and recommends an adjustment to the current
@@ -1028,8 +1025,8 @@ final class LoopDataManager {
             )
         
         // Don't recommend changes if a bolus was just set
-        if lastRequestedBolus == nil && tempBasal != nil {
-            recommendedTempBasal = (recommendation: tempBasal!, date: Date())
+        if let temp = tempBasal, lastRequestedBolus == nil/*, (temp.duration == 0 || temp.duration >= TimeInterval(minutes: 5))*/  {
+            recommendedTempBasal = (recommendation: temp, date: Date())
         } else {
             print("updatePredictedGlucoseAndRecommendedBasal - Bolus or !tempBasal")
             recommendedTempBasal = nil
