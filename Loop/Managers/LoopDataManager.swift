@@ -1161,27 +1161,26 @@ final class LoopDataManager {
         
         guard abs(recommendedBolus.date.timeIntervalSinceNow) < TimeInterval(minutes: 5) else {
             completion(LoopError.recommendationExpired(date: recommendedBolus.date))
-            print("setAutomatedBolus - recommendation too old")
+            addInternalNote("setAutomatedBolus - recommendation too old")
             return
         }
         
         if let lastAutomaticBolus = self.lastAutomaticBolus, abs(lastAutomaticBolus.timeIntervalSinceNow) < settings.automaticBolusInterval {
-            print("setAutomatedBolus - last automatic bolus too close")
+            addInternalNote("setAutomatedBolus - last automatic bolus too close")
             completion(nil)
             return
         }
         
         if let carbChange = lastCarbChange {
             guard abs(carbChange.timeIntervalSinceNow) > TimeInterval(minutes: 2) else {
-                print("setAutomatedBolus - last carbchange too close")
+                addInternalNote("setAutomatedBolus - last carbchange too close")
                 completion(nil)
                 return
             }
         }
-        
-        if lastRequestedBolus != nil || lastPendingBolus != nil {
-            print("setAutomatedBolus - lastRequestedBolus or lastPendingBolus still in progress",
-                  lastRequestedBolus as Any, lastPendingBolus as Any)
+        // TODO lastPendingBolus is never cleared, thus we need to check for the date here.
+        if lastRequestedBolus != nil {
+            addInternalNote("setAutomatedBolus - lastRequestedBolus or lastPendingBolus still in progress \(String(describing: lastRequestedBolus)) \(String(describing: lastPendingBolus))")
             completion(nil)
             return
         }
