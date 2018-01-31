@@ -493,6 +493,7 @@ final class DeviceDataManager {
     /// - parameter units:      The number of units to deliver
     /// - parameter completion: A clsure called after the command is complete. This closure takes a single argument:
     ///     - error: An error describing why the command failed
+    
     private func tryBolus(ops: PumpOps, units: Double, attempt: Int = 0, notify: @escaping (Error?) -> Void) {
         //let retryBolus = {
             ops.setNormalBolus(units: units) { (error) in
@@ -524,7 +525,11 @@ final class DeviceDataManager {
                         self.tryBolus(ops: ops, units: units, attempt: nextAttempt, notify: notify)
                         return
                     }
-                    notify(error)
+                    self.loopManager.addFailedBolus(units: units, at: Date(), error: error) {
+                        self.triggerPumpDataRead()
+                        self.loopManager.addInternalNote("Bolus failed: \(error.localizedDescription)")
+                        notify(error)
+                    }
                 } else {
                     self.loopManager.addConfirmedBolus(units: units, at: Date()) {
                         self.triggerPumpDataRead()
@@ -534,22 +539,25 @@ final class DeviceDataManager {
             //}
         }
     }
-    
+    // TODO(Erik): This needs serialization
+    private var bolusInProgress = false
     func enactBolus(units: Double, at startDate: Date = Date(), quiet : Bool = false, completion: @escaping (_ error: Error?) -> Void) {
+        
         let notify = { (error: Error?) -> Void in
             if let error = error {
                 if !quiet {
                     NotificationManager.sendBolusFailureNotification(for: error, units: units, at: startDate)
                 }
-                self.loopManager.addInternalNote("Bolus failed: \(error.localizedDescription)")
-                self.loopManager.addFailedBolus(units: units, at: startDate, error: error) {
-                    // empty
-                }
             }
-
+            self.bolusInProgress = false
             completion(error)
         }
-
+        guard !bolusInProgress else {
+            notify(LoopError.invalidData(details: "Bolus already in progress"))
+            return
+        }
+        bolusInProgress = true
+        
         guard units > 0 else {
             notify(nil)
             return
