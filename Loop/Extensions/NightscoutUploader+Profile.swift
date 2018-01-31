@@ -132,9 +132,9 @@ public class NightscoutProfile {
         rval["created_at"] = NightscoutTimeFormat.timestampStrFromDate(timestamp)
         rval["enteredBy"] = "loop2"
         rval["store"] = store
-        
-        rval["loopSettings"] = self.settings
-        
+        var settings = self.settings
+        settings.removeValue(forKey: "glucoseTargetRangeSchedule")
+        rval["loopSettings"] = settings
         return rval
     }
 }
