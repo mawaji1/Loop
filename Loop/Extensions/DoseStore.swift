@@ -18,8 +18,24 @@ public enum FakeEventTypes: UInt8 {
 }
 
 final class PendingTreatmentsQueueManager: IdentifiableClass {
-    static let queue: DispatchQueue = DispatchQueue(label: "com.loopkit.loop.UserDefaults.pendingTreatmentsQueue", qos: .utility)
-    static var pending : [NightscoutTreatment] = []
+    
+    static var shared = PendingTreatmentsQueueManager()
+    
+    public let queue: DispatchQueue = DispatchQueue(label: "com.loopkit.loop.UserDefaults.pendingTreatmentsQueue", qos: .utility)
+    public var pending : [NightscoutTreatment] = []
+    
+    public var generation = String(UUID().uuidString.prefix(4))
+    
+    private let lock = DispatchSemaphore(value: 1)
+    private var value = 0
+    
+    public func incrementAndGet() -> Int {
+        
+        lock.wait()
+        defer { lock.signal() }
+        value += 1
+        return value
+    }
 }
 
 // Bridges support for MinimedKit data types
@@ -117,19 +133,22 @@ extension LoopDataManager {
     // Modifications to handle more logging events from App in Nightscout
     //
     private func addFakeEvent(_ eventType: FakeEventTypes, _ note: String) {
-            let date = Date()
-            let note = note
+        let date = Date()
+        
         let author = "loop://\(UIDevice.current.name)"
-
+        let id = PendingTreatmentsQueueManager.shared.generation
+        let n = PendingTreatmentsQueueManager.shared.incrementAndGet()
+        let uid = "#\(id):\(n)"
+        
         var treatment : NightscoutTreatment?
             switch(eventType) {
                 
             case .note:
-                treatment = NoteNightscoutTreatment(timestamp: date, enteredBy: author, notes: note)
+                treatment = NoteNightscoutTreatment(timestamp: date, enteredBy: author, notes: "\(note) \(uid)")
             case .insulinChange:
-                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note)", eventType: "Insulin Change")
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note) \(uid)", eventType: "Insulin Change")
             case .siteChange:
-                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note)", eventType: "Site Change")
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note) \(uid)", eventType: "Site Change")
             case .bgReceived:
                 let parts = note.split(separator: " ", maxSplits: 1)
                 let amount = Int(parts[0]) ?? 0
@@ -140,35 +159,35 @@ extension LoopDataManager {
                     glucose: amount,
                     glucoseType: .Meter,
                     units: .MGDL,
-                    notes: comment
+                    notes: "\(comment) \(uid)"
                 )
                 
             }
         guard let finalTreatment = treatment else {
             return
         }
-        print("UPLOADING finalTreatment", finalTreatment)
-        PendingTreatmentsQueueManager.queue.async {
-            PendingTreatmentsQueueManager.pending.append(finalTreatment)
+        print("UPLOADING finalTreatment", uid, finalTreatment)
+        PendingTreatmentsQueueManager.shared.queue.async {
+            PendingTreatmentsQueueManager.shared.pending.append(finalTreatment)
             // UserDefaults.standard.pendingTreatments.append(event)
             self.uploadTreatments()
         }
     }
     
     private func uploadTreatments() {
-        dispatchPrecondition(condition: .onQueue(PendingTreatmentsQueueManager.queue))
+        dispatchPrecondition(condition: .onQueue(PendingTreatmentsQueueManager.shared.queue))
 
-        let pendingTreatments = PendingTreatmentsQueueManager.pending
-        PendingTreatmentsQueueManager.pending = []
+        let pendingTreatments = PendingTreatmentsQueueManager.shared.pending
+        PendingTreatmentsQueueManager.shared.pending = []
         print("UPLOADING", pendingTreatments as Any)
         delegate.loopDataManager(self, uploadTreatments: pendingTreatments) { (notUploadedTreatments) in
-            PendingTreatmentsQueueManager.queue.async {
+            PendingTreatmentsQueueManager.shared.queue.async {
                 print("UPLOADING DONE", notUploadedTreatments)
                 if notUploadedTreatments.count > 0 {
                 // TODO(Erik): This is a bit messed up - and should probably rather live in the delegate
                 
                     for treatment in notUploadedTreatments {
-                        PendingTreatmentsQueueManager.pending.append(treatment)
+                        PendingTreatmentsQueueManager.shared.pending.append(treatment)
                        // UserDefaults.standard.pendingTreatments.append(pending)
                     }
                 }
