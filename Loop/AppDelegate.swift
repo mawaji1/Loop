@@ -109,7 +109,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 extension AppDelegate {
     
     func application(application: UIApplication, performFetchWithCompletionHandler completionHandler: (UIBackgroundFetchResult) -> Void) {
-        print("Fetch!");
+        deviceManager.loopManager.addInternalNote("background-fetch")
         deviceManager.maybeToggleBluetooth("background-fetch")
         completionHandler(UIBackgroundFetchResult.newData)
     }
