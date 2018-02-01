@@ -19,3 +19,18 @@
 ## Revisit Insulinmodel Settings
 
 - activity 300, peak 50 was the old model
+
+
+## Logging
+
+-  number log entries and add uuid.
+
+## Bluetooth restart
+
+-  trigger on rileylink but no glucose.
+
+
+## Foodmanager
+
+-  add dextrose tabs
+-  reduce milk and chocolate to 200 ml
