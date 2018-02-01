@@ -125,6 +125,7 @@ final class DeviceDataManager {
         cgmManager?.fetchNewDataIfNeeded(with: self) { (result) in
             self.cgmManager(self.cgmManager!, didUpdateWith: result)
         }
+        maybeToggleBluetooth("rileyLink")
     }
 
     func connectToRileyLink(_ device: RileyLinkDevice) {
