@@ -23,14 +23,18 @@
 
 ## Logging
 
--  number log entries and add uuid.
+-  number log entries and add uuid. - done
+-  log entries still missing, not sure where and why
 
 ## Bluetooth restart
 
--  trigger on rileylink but no glucose.
+-  trigger on rileylink but no glucose. - need to test
 
 
 ## Foodmanager
 
 -  add dextrose tabs
 -  reduce milk and chocolate to 200 ml
+-  Undo possible even after bolus
+-  Undo not working properly. At least propagate error.
+-  Sometimes after lock screen the mealInformation is out of date -> move to view controller logic.
