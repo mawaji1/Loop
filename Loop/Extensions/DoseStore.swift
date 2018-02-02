@@ -28,6 +28,7 @@ final class PendingTreatmentsQueueManager: IdentifiableClass {
     
     private let lock = DispatchSemaphore(value: 1)
     private var value = 0
+    private var failed = 0
     
     public func incrementAndGet() -> Int {
         
@@ -35,6 +36,18 @@ final class PendingTreatmentsQueueManager: IdentifiableClass {
         defer { lock.signal() }
         value += 1
         return value
+    }
+    
+    public func recordFailure() {
+        lock.wait()
+        defer { lock.signal() }
+        failed += 1
+    }
+    
+    public func failures() -> Int {
+        lock.wait()
+        defer { lock.signal() }
+        return failed
     }
 }
 
@@ -138,7 +151,8 @@ extension LoopDataManager {
         let author = "loop://\(UIDevice.current.name)"
         let id = PendingTreatmentsQueueManager.shared.generation
         let n = PendingTreatmentsQueueManager.shared.incrementAndGet()
-        let uid = "#\(id):\(n)"
+        let fail = PendingTreatmentsQueueManager.shared.failures()
+        let uid = "#\(id):\(n) (\(fail))"
         
         var treatment : NightscoutTreatment?
             switch(eventType) {
@@ -183,14 +197,13 @@ extension LoopDataManager {
         delegate.loopDataManager(self, uploadTreatments: pendingTreatments) { (notUploadedTreatments) in
             PendingTreatmentsQueueManager.shared.queue.async {
                 print("UPLOADING DONE", notUploadedTreatments)
-                if notUploadedTreatments.count > 0 {
-                // TODO(Erik): This is a bit messed up - and should probably rather live in the delegate
-                
-                    for treatment in notUploadedTreatments {
+
+                 for treatment in notUploadedTreatments {
                         PendingTreatmentsQueueManager.shared.pending.append(treatment)
+                        PendingTreatmentsQueueManager.shared.recordFailure()
                        // UserDefaults.standard.pendingTreatments.append(pending)
-                    }
                 }
+                
             }
         }
     }
