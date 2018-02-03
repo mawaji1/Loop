@@ -180,7 +180,7 @@ extension LoopDataManager {
         guard let finalTreatment = treatment else {
             return
         }
-        print("UPLOADING finalTreatment", uid, finalTreatment)
+        print("UPLOADING finalTreatment", finalTreatment.dictionaryRepresentation)
         PendingTreatmentsQueueManager.shared.queue.async {
             PendingTreatmentsQueueManager.shared.pending.append(finalTreatment)
             // UserDefaults.standard.pendingTreatments.append(event)
@@ -193,21 +193,36 @@ extension LoopDataManager {
         let pendingTreatments = PendingTreatmentsQueueManager.shared.pending
         PendingTreatmentsQueueManager.shared.pending = []
         print("UPLOADING", pendingTreatments.count)
-        for treatment in pendingTreatments {
-            PendingTreatmentsQueueManager.shared.queue.async {
-                    self.delegate.loopDataManager(self, uploadTreatments: pendingTreatments) { (result) in
+        let uploadGroup = DispatchGroup()
+        //for treatment in pendingTreatments {
+        
+                uploadGroup.enter()
+                    let uploadTreatments = pendingTreatments
+                    self.delegate.loopDataManager(self, uploadTreatments: uploadTreatments) { (result) in
                         switch(result) {
                         case .success(let ids):
-                            print("UPLOADING SUCCESS", ids, treatment)
+                            
+                            for (treatment, id) in zip(uploadTreatments, ids) {
+                                if id == "NA" {
+                                    print("UPLOADING SUCCESS NA ID", treatment.dictionaryRepresentation)
+                                    PendingTreatmentsQueueManager.shared.pending.append(treatment)
+                                    PendingTreatmentsQueueManager.shared.recordFailure()
+                                } else {
+                                    print("UPLOADING SUCCESS", id, treatment.dictionaryRepresentation)
+                                }
+                            }
                         case .failure(let error):
-                            print("UPLOADING ERROR", error, treatment)
-                            PendingTreatmentsQueueManager.shared.pending.append(treatment)
-                            PendingTreatmentsQueueManager.shared.recordFailure()
+                            for treatment in uploadTreatments {
+                                print("UPLOADING ERROR", error, treatment.dictionaryRepresentation)
+                                PendingTreatmentsQueueManager.shared.pending.append(treatment)
+                                PendingTreatmentsQueueManager.shared.recordFailure()
+                            }
                         }
-                }
+                        uploadGroup.leave()
+                    }
                 
-            }
-        }
+           // }
+        uploadGroup.wait()
     }
     
     public func addNote(_ text: String) {
