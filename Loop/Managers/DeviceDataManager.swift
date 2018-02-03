@@ -825,10 +825,7 @@ final class DeviceDataManager {
     // MARK: - Bluetooth restart magic
     private var btMagicDate : Date = Date()
     func maybeToggleBluetooth(_ source: String) {
-        if btMagicDate.timeIntervalSinceNow > TimeInterval(minutes: -30) {
-            print("maybeToggleBluetooth - \(source) - tried recently ", btMagicDate)
-            return
-        }
+
         var restartReason : String? = nil
         if let reservoir = loopManager.doseStore.lastReservoirValue,
             reservoir.startDate.timeIntervalSinceNow <= -TimeInterval(minutes: -30) {
@@ -841,13 +838,16 @@ final class DeviceDataManager {
         guard let reason = restartReason else {
             return
         }
-        
+        if btMagicDate.timeIntervalSinceNow > TimeInterval(minutes: -30) {
+            print("maybeToggleBluetooth - \(source) - tried recently ", btMagicDate)
+            return
+        }
         loopManager.addInternalNote("maybeToggleBluetooth - \(source) - Reason \(reason) - Restarting Bluetooth, no data for 30 minutes (could also be out of range)")
         if let bluetoothManagerHandler = BluetoothManagerHandler.sharedInstance() {
             bluetoothManagerHandler.disable()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: {
+            //DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: {
                 bluetoothManagerHandler.enable()
-            })
+            //})
         }
         btMagicDate = Date()
     }
