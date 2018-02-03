@@ -2,7 +2,6 @@
 
 ## QuickCarbEntry
 
--  Manual Glucose Entry (plus LoopManager handling if necessary)
 -  Display slider or wheel for carbs instead of text entry
 
 
@@ -21,14 +20,9 @@
 - activity 300, peak 50 was the old model
 
 
-## Logging
-
--  number log entries and add uuid. - done
--  log entries still missing, not sure where and why
-
 ## Bluetooth restart
 
--  trigger on rileylink but no glucose. - need to test
+-  Still needs a lot of testing and a way to trigger without Bluetooth packets.
 
 
 ## Foodmanager
@@ -39,7 +33,3 @@
 -  Undo not working properly. At least propagate error.
 -  Sometimes after lock screen the mealInformation is out of date -> move to view controller logic.
 
-## Settings
-
-
--  Store in Nightscout:  Minimum Basal Rates, Workout/Meal Targets, G5 Transmitter ID, Pump ID

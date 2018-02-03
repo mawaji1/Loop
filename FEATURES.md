@@ -55,6 +55,7 @@ see [TODO](/TODO.md) for planned features
 
 -  Focus on the basics and +- 5 carbs increments
 -  In the future allow manual glucose entry.
+-  Manual Glucose Entry (plus LoopManager handling if necessary)
 
 
 ## Meal Information on main screen
@@ -100,6 +101,7 @@ see [TODO](/TODO.md) for planned features
 
 - Automatically log the current Basal, CarbRatio and Target
   settings to Nightscout.
+- Store in Nightscout:  Minimum Basal Rates, Workout/Meal Targets, G5 Transmitter ID, Pump ID
 
 ## Predictive Low Notifications
 
@@ -117,6 +119,15 @@ see [TODO](/TODO.md) for planned features
 ## Automated Time change on pump
 
 -  If the difference is more than a few seconds, synchronize time.
+
+## Recommend Bolus based on Carbs if no glucose is available
+
+-  Implemented and working.  Use at your own risk.  Won't trigger
+   an automated Bolus.
+
+## Bluetooth restart
+
+-  Triggered if either Glucose or Rileylink is missing.  Not super reliable.
 
 # Additional Features for consideration
 
