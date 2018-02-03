@@ -917,7 +917,7 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
             var foodPicks = FoodPicks()
             
             var undoPossible = false
-            if let mi = self.mealInformation {
+            if let mi = self.mealInformation, let mealEnd = mi.end, mealEnd.timeIntervalSinceNow > TimeInterval(minutes: -30) {
                 let intcarbs = Int(mi.carbs ?? 0)
                 cell.currentCarbLabel.text = "\(intcarbs) g"
                 if let fp = mi.picks {
@@ -955,6 +955,10 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
             } else {
                 cell.currentCarbLabel.text = ""
                 cell.currentCarbDate.text = ""
+                cell.debugLabelTop.text = ""
+                cell.debugLabelBottom.text = ""
+                cell.currentCarbLabel.text = "0 g"
+                cell.currentCarbDate.text = "(tap to eat)"
             }
             
             if undoPossible, mealInformation?.lastCarbEntry != nil {
