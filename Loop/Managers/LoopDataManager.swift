@@ -1494,7 +1494,7 @@ final class LoopDataManager {
                 }
 
             case .failure(let error):
-                // TODO should we actually clean out the mealinformation below?
+                // TODO(Erik) This should actually result in an error communicated to the user.
                 self.addInternalNote("recommendBolusCarbOnly - Error - \(error.localizedDescription)")
 
                 
