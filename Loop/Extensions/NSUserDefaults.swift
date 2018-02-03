@@ -408,6 +408,16 @@ extension UserDefaults {
         if retry > 5 {
             return
         }
+        var settings = loopSettings?.rawValue ?? [:]
+        settings["minBasal"] = minimumBasalRateSchedule?.rawValue
+        settings["pumpId"] = pumpID
+        settings["pumpRegion"] = pumpRegion?.description
+        settings["cgmSource"] = cgm?.rawValue
+        var targets : [String:String] = [:]
+        for range in loopSettings?.glucoseTargetRangeSchedule?.overrideRanges ?? [:] {
+            targets[range.key.rawValue] = "\(range.value.minValue) - \(range.value.maxValue)"
+        }
+        settings["workoutTargets"] = targets
         let profile = NightscoutProfile(
           timestamp: Date(),
           name: "Loop2",
@@ -417,7 +427,7 @@ extension UserDefaults {
           basal : basalRateSchedule,
           timezone : TimeZone.current,
           dia : (insulinModelSettings?.model.effectDuration ?? 0) / 3600,
-          settings : loopSettings?.rawValue ?? [:]
+          settings : settings
         )
         if profile.json != lastUploadedNightscoutProfile {
             uploader.uploadProfile(profile) { (result) in
