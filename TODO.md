@@ -38,3 +38,8 @@
 -  Undo possible even after bolus
 -  Undo not working properly. At least propagate error.
 -  Sometimes after lock screen the mealInformation is out of date -> move to view controller logic.
+
+## Settings
+
+
+-  Store in Nightscout:  Minimum Basal Rates, Workout/Meal Targets, G5 Transmitter ID, Pump ID
