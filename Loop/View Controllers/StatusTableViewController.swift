@@ -1566,7 +1566,9 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
             
             alert.addAction(UIAlertAction(title: "Remove", style: .default, handler: { [weak alert] (_) in
                 print("Alert", alert as Any)
-                self.deviceManager.loopManager.removeLastFoodPick()
+                if let error = self.deviceManager.loopManager.removeLastFoodPick() {
+                    self.presentAlertController(with: error)
+                }
                 self.reloadData()
             }))
             

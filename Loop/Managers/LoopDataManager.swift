@@ -97,7 +97,7 @@ final class LoopDataManager {
             self.dataAccessQueue.async {
                 self.carbEffect = nil
                 self.carbsOnBoard = nil
-                self.mealInformation = nil
+                self.mealInformationNeedsUpdate = true
                 self.notify(forChange: .carbs)
             }
         }
@@ -304,8 +304,7 @@ final class LoopDataManager {
 
                     self.carbEffect = nil
                     self.carbsOnBoard = nil
-                    self.mealInformation = nil
-
+                    self.mealInformationNeedsUpdate = true
                     defer {
                         self.notify(forChange: .carbs)
                     }
@@ -548,12 +547,18 @@ final class LoopDataManager {
         }
         
         // Must not depend on valid glucose data.
-        if mealInformation?.date.timeIntervalSinceNow ?? -TimeInterval.infinity < TimeInterval(minutes: -5) {
+        if mealInformationNeedsUpdate || (mealInformation?.date.timeIntervalSinceNow ?? -TimeInterval.infinity < TimeInterval(minutes: -5)) {
             updateMealInformation(updateGroup, Date())
         }
         _ = updateGroup.wait(timeout: .distantFuture)
 
         guard let lastGlucoseDate = latestGlucoseDate else {
+            if let recommendation = recommendBolusCarbOnly() {
+                recommendedBolus = (recommendation: recommendation, date: Date())
+            } else {
+                recommendedBolus = nil
+            }
+            _ = updateGroup.wait(timeout: .distantFuture)
             throw LoopError.missingDataError(details: "Glucose data not available", recovery: "Check your CGM data source")
         }
 
@@ -1361,6 +1366,7 @@ final class LoopDataManager {
     
     
     fileprivate var mealInformation : MealInformation? = nil
+    private var mealInformationNeedsUpdate = true
     
     private func updateMealInformation(_ updateGroup: DispatchGroup, _ dataDate: Date) {
         print("updateMealInformation")
@@ -1403,7 +1409,8 @@ final class LoopDataManager {
                                             picks: allPicks,
                                             start: mealStart, end: mealEnd, carbs: carbs, undoPossible: undoPossible)
                 case .failure(let error):
-                    print("updateMealInformation - Error", error as Any)
+                    // TODO should we actually clean out the mealinformation below?
+                    self.addInternalNote("updateMealInformation - Error - \(error.localizedDescription)")
                     self.mealInformation = (date: endDate, lastCarbEntry: nil, picks: nil, start: nil, end: nil, carbs: nil, undoPossible: false)
                     
                 }
@@ -1411,17 +1418,19 @@ final class LoopDataManager {
                 updateGroup.leave()
             }
         }
+        mealInformationNeedsUpdate = false
     }
+
     
     private var manualGlucoseEntered = false  // TODO switch to false
     private var carbUndoPossible : Date? = nil  // no undo after restart
     
-    public func removeLastFoodPick() {
+    public func removeLastFoodPick() -> Error? {
         // TODO(Erik): This should have a completion to present an error (and not use DispatchGroup)
         print("removeLastFoodPick")
         let updateGroup = DispatchGroup.init()
         updateGroup.enter()
-        
+        var ret : Error? = nil
         dataAccessQueue.async {
             
             guard let lastCarbEntry = self.mealInformation?.lastCarbEntry,
@@ -1442,19 +1451,69 @@ final class LoopDataManager {
                     if success {
                         self.carbEffect = nil
                         self.carbsOnBoard = nil
-                        self.mealInformation = nil
+                        self.mealInformationNeedsUpdate = true
                         defer {
                             self.notify(forChange: .carbs)
                         }
                     }
                     if error != nil {
                         print("deleteCarbEntry error", error as Any)
+                        ret = error
                     }
                     updateGroup.leave()
                 }
             }
         }
         updateGroup.wait()
+        return ret
+    }
+    
+    // CARB ONLY BOLUS SUGGESTION
+    
+    func recommendBolusCarbOnly() -> BolusRecommendation? {
+        // lastBolus is a bit bad here as automatedBolus can overwrite this for unsuccessful
+        // bolus' as well.
+        guard let carbRatioRange = carbRatioSchedule else {
+            return nil
+        }
+        let halfAnHourAgo = Date().addingTimeInterval(TimeInterval(minutes:-30))
+        let lastBolus = lastAutomaticBolus ?? halfAnHourAgo
+        let since = max(lastBolus, halfAnHourAgo)
+        var carbs = 0.0
+        let updateGroup = DispatchGroup()
+        updateGroup.enter()
+        // since last bolus, but not more than 30 minutes
+        carbStore.getCarbEntries(start: since) { (result) in
+            
+            switch result {
+            case .success(let values):
+                
+                for value in values {
+                    carbs = carbs + value.quantity.doubleValue(for: HKUnit.gram())
+                    
+                }
+
+            case .failure(let error):
+                // TODO should we actually clean out the mealinformation below?
+                self.addInternalNote("recommendBolusCarbOnly - Error - \(error.localizedDescription)")
+
+                
+            }
+            updateGroup.leave()
+        }
+        updateGroup.wait()
+        let carbRatio = carbRatioRange.quantity(at: Date()).doubleValue(for: HKUnit.gram())
+        let recommendation = round(carbs / carbRatio * 10) / 10
+        
+        print("recommendBolusCarbOnly - Ratio \(carbRatio) - Carbs \(carbs) - Since \(since)")
+        self.addInternalNote("recommendBolusCarbOnly - Ratio \(carbRatio) - Carbs \(carbs) - Since \(since)")
+        do {
+            let pendingInsulin = try self.getPendingInsulin()
+            return BolusRecommendation(amount: recommendation, pendingInsulin: pendingInsulin, notice: .carbOnly(carbs: carbs))
+        } catch {
+            return nil
+        }
+        
     }
     
     // VALID GLUCOSE HELPERS
@@ -1529,7 +1588,7 @@ final class LoopDataManager {
                 }
                 minDate = future
                 
-                minValue = value
+                minValue = round(value)
             }
             
             lastValue = value
@@ -1579,7 +1638,7 @@ final class LoopDataManager {
                     addInternalNote("sendGlucoseFutureLowNotifications too close")
                 } else {
                     addInternalNote( "sendGlucoseFutureLowNotifications sent")
-                    NotificationManager.sendGlucoseFutureLowNotifications(currentDate: currentDate, lowDate: lowDate, target: round(min), glucose: round(minValue), carbs: roundedCarbs)
+                    NotificationManager.sendGlucoseFutureLowNotifications(currentDate: currentDate, lowDate: lowDate, target: round(min), glucose: minValue, carbs: roundedCarbs)
                 }
                 lastLowNotification = (lowDate, minValue, roundedCarbs)
             }
