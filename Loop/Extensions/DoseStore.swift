@@ -194,34 +194,25 @@ extension LoopDataManager {
         PendingTreatmentsQueueManager.shared.pending = []
         print("UPLOADING", pendingTreatments.count)
         let uploadGroup = DispatchGroup()
-        //for treatment in pendingTreatments {
         
-                uploadGroup.enter()
-                    let uploadTreatments = pendingTreatments
-                    self.delegate.loopDataManager(self, uploadTreatments: uploadTreatments) { (result) in
-                        switch(result) {
-                        case .success(let ids):
-                            
-                            for (treatment, id) in zip(uploadTreatments, ids) {
-                                if id == "NA" {
-                                    print("UPLOADING SUCCESS NA ID", treatment.dictionaryRepresentation)
-                                    PendingTreatmentsQueueManager.shared.pending.append(treatment)
-                                    PendingTreatmentsQueueManager.shared.recordFailure()
-                                } else {
-                                    print("UPLOADING SUCCESS", id, treatment.dictionaryRepresentation)
-                                }
-                            }
-                        case .failure(let error):
-                            for treatment in uploadTreatments {
-                                print("UPLOADING ERROR", error, treatment.dictionaryRepresentation)
-                                PendingTreatmentsQueueManager.shared.pending.append(treatment)
-                                PendingTreatmentsQueueManager.shared.recordFailure()
-                            }
-                        }
-                        uploadGroup.leave()
-                    }
-                
-           // }
+        uploadGroup.enter()
+        let uploadTreatments = pendingTreatments
+        self.delegate.loopDataManager(self, uploadTreatments: uploadTreatments) { (result) in
+            switch(result) {
+            case .success(let ids):
+                for (treatment, id) in zip(uploadTreatments, ids) {
+                    print("UPLOADING SUCCESS", id, treatment.dictionaryRepresentation)
+                }
+            case .failure(let error):
+                for treatment in uploadTreatments {
+                    print("UPLOADING ERROR", error, treatment.dictionaryRepresentation)
+                    PendingTreatmentsQueueManager.shared.pending.append(treatment)
+                    PendingTreatmentsQueueManager.shared.recordFailure()
+                }
+            }
+            uploadGroup.leave()
+        }
+        
         uploadGroup.wait()
     }
     
