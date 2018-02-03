@@ -190,18 +190,20 @@ extension LoopDataManager {
     
     private func uploadTreatments() {
         dispatchPrecondition(condition: .onQueue(PendingTreatmentsQueueManager.shared.queue))
-
         let pendingTreatments = PendingTreatmentsQueueManager.shared.pending
         PendingTreatmentsQueueManager.shared.pending = []
-        print("UPLOADING", pendingTreatments as Any)
-        delegate.loopDataManager(self, uploadTreatments: pendingTreatments) { (notUploadedTreatments) in
+        print("UPLOADING", pendingTreatments.count)
+        for treatment in pendingTreatments {
             PendingTreatmentsQueueManager.shared.queue.async {
-                print("UPLOADING DONE", notUploadedTreatments)
-
-                 for treatment in notUploadedTreatments {
-                        PendingTreatmentsQueueManager.shared.pending.append(treatment)
-                        PendingTreatmentsQueueManager.shared.recordFailure()
-                       // UserDefaults.standard.pendingTreatments.append(pending)
+                    self.delegate.loopDataManager(self, uploadTreatments: pendingTreatments) { (result) in
+                        switch(result) {
+                        case .success(let ids):
+                            print("UPLOADING SUCCESS", ids, treatment)
+                        case .failure(let error):
+                            print("UPLOADING ERROR", error, treatment)
+                            PendingTreatmentsQueueManager.shared.pending.append(treatment)
+                            PendingTreatmentsQueueManager.shared.recordFailure()
+                        }
                 }
                 
             }

@@ -1857,5 +1857,5 @@ protocol LoopDataManagerDelegate: class {
     ///   - result: The enacted bolus
     func loopDataManager(_ manager: LoopDataManager, didRecommendBolus bolus: (recommendation: BolusRecommendation, date: Date), completion: @escaping (_ result: Result<DoseEntry>) -> Void) -> Void
     
-    func loopDataManager(_ manager: LoopDataManager, uploadTreatments treatments: [NightscoutTreatment], completion: @escaping (_ notUploaded: [NightscoutTreatment]) -> Void) -> Void
+    func loopDataManager(_ manager: LoopDataManager, uploadTreatments treatments: [NightscoutTreatment], completion: @escaping  (Result<[String]>) -> Void) -> Void
 }

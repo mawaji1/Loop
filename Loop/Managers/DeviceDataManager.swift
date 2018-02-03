@@ -809,7 +809,6 @@ final class DeviceDataManager {
             lastLoopCompleted: statusExtensionManager.context?.loop?.lastCompleted,
             lastTempBasal: statusExtensionManager.context?.netBasal?.tempBasal
         )
-        AnalyticsManager.shared.loopManager = loopManager
         watchManager = WatchDataManager(deviceDataManager: self)
         nightscoutDataManager = NightscoutDataManager(deviceDataManager: self)
 
@@ -1031,22 +1030,22 @@ extension DeviceDataManager: LoopDataManagerDelegate {
         }
     }
     
-    func loopDataManager(_ manager: LoopDataManager, uploadTreatments treatments: [NightscoutTreatment], completion: @escaping (_ notUploaded: [NightscoutTreatment]) -> Void) {
+    func loopDataManager(_ manager: LoopDataManager, uploadTreatments treatments: [NightscoutTreatment], completion: @escaping (Result<[String]>) -> Void) {
         
         guard let uploader = remoteDataManager.nightscoutService.uploader else {
-            completion(treatments)
+            completion(.failure(LoopError.configurationError("Nightscout not configured")))
             return
         }
         
         uploader.upload(treatments) { (result) in
             switch result {
-            case .success:
-                completion([])
+            case .success(let objects):
+                completion(.success(objects))
             case .failure(let error):
                 let logger = DiagnosticLogger.shared!.forCategory("NightscoutUploader")
                 logger.error(error)
                 print("UPLOADING delegate failed", error as Any)
-                completion(treatments)
+                completion(.failure(error))
             }
         }
     
