@@ -15,6 +15,7 @@ public enum FakeEventTypes: UInt8 {
     case siteChange = 0xfd
     case insulinChange = 0xfc
     case bgReceived = 0xfb
+    case debug = 0xfa
 }
 
 final class PendingTreatmentsQueueManager: IdentifiableClass {
@@ -156,7 +157,8 @@ extension LoopDataManager {
         
         var treatment : NightscoutTreatment?
             switch(eventType) {
-                
+            case .debug:
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "\(note) \(uid)", eventType: "Debug")
             case .note:
                 treatment = NoteNightscoutTreatment(timestamp: date, enteredBy: author, notes: "\(note) \(uid)")
             case .insulinChange:
@@ -222,11 +224,13 @@ extension LoopDataManager {
     }
     
     public func addInternalNote(_ text: String) {
-        addFakeEvent(.note, "INTERNAL \(text)")
+        print("INTERNAL \(text)")
+        addFakeEvent(.debug, "INTERNAL \(text)")
     }
     
     public func addDebugNote(_ text: String) {
-        addFakeEvent(.note, "DEBUG \(text)")
+        print("DEBUG \(text)")
+        addFakeEvent(.debug, "DEBUG \(text)")
     }
     
     public func addInsulinChange(_ text: String) {
