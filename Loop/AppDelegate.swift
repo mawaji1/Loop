@@ -109,7 +109,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 // Watchdog for resetting Bluetooth if needed.
 extension AppDelegate {
     
-    func application(application: UIApplication, performFetchWithCompletionHandler completionHandler: (UIBackgroundFetchResult) -> Void) {
+    func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         deviceManager.loopManager.addInternalNote("background-fetch")
         deviceManager.maybeToggleBluetooth("background-fetch")
         completionHandler(UIBackgroundFetchResult.newData)
