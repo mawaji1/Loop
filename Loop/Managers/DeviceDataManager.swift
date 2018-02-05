@@ -842,14 +842,14 @@ final class DeviceDataManager {
             glucose.startDate.timeIntervalSinceNow <= TimeInterval(minutes: -30) {
             restartReason = "cgm"
         }
-        
+        /*  Not sure if this is working.
         if let bluetoothManagerHandler = BluetoothManagerHandler.sharedInstance() {
             if !bluetoothManagerHandler.enabled() {
                 loopManager.addInternalNote("maybeToggleBluetooth - enable - because it was disabled")
                 bluetoothManagerHandler.enable()
                 bluetoothManagerHandler.setPower(true)
             }
-        }
+        } */
         guard let reason = restartReason else {
             return
         }
@@ -862,7 +862,7 @@ final class DeviceDataManager {
             loopManager.addInternalNote("maybeToggleBluetooth - disable")
             bluetoothManagerHandler.disable()
             bluetoothManagerHandler.setPower(false)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: {
                 self.loopManager.addInternalNote("maybeToggleBluetooth - enable")
                 bluetoothManagerHandler.setPower(true)
                 bluetoothManagerHandler.enable()
