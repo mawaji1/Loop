@@ -158,7 +158,14 @@ extension LoopDataManager {
         var treatment : NightscoutTreatment?
             switch(eventType) {
             case .debug:
-                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "\(note) \(uid)", eventType: "Debug")
+                let cal = Calendar.current
+                let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second, .nanosecond], from: date)
+                let microSeconds = lrint(Double(comps.nanosecond!)/1000)
+                // This hack is here to prevent de-duplication of events on insert
+                // in Nightscout.  Everything else is logged much less per second, this might
+                // be logged more than once.
+                let formatted = String(format: "Debug.%06ld", microSeconds)
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "\(note) \(uid)", eventType: formatted)
             case .note:
                 treatment = NoteNightscoutTreatment(timestamp: date, enteredBy: author, notes: "\(note) \(uid)")
             case .insulinChange:
