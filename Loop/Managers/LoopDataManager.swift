@@ -210,7 +210,7 @@ final class LoopDataManager {
     }
 
     /// The amount of time since a given date that data should be considered valid
-    var recencyInterval = TimeInterval(minutes: 15)
+    public var recencyInterval = TimeInterval(minutes: 15)
 
     /// Sets a new time zone for a the schedule-based settings
     ///
@@ -1377,10 +1377,8 @@ final class LoopDataManager {
             
             let undoPossibleDate = carbUndoPossible
             updateGroup.enter()
-            carbStore.getCarbEntries(start: mealDate, end: endDate) { (result) in
-                
-                switch result {
-                case .success(let values):
+            carbStore.getCachedCarbEntries(start: mealDate, end: endDate) { (values) in
+
                     var mealStart = endDate
                     var mealEnd = mealDate
                     var carbs : Double = 0
@@ -1408,12 +1406,7 @@ final class LoopDataManager {
                     self.mealInformation = (date: endDate, lastCarbEntry: values.last,
                                             picks: allPicks,
                                             start: mealStart, end: mealEnd, carbs: carbs, undoPossible: undoPossible)
-                case .failure(let error):
-                    // TODO should we actually clean out the mealinformation below?
-                    self.addInternalNote("updateMealInformation - Error - \(error.localizedDescription)")
-                    self.mealInformation = (date: endDate, lastCarbEntry: nil, picks: nil, start: nil, end: nil, carbs: nil, undoPossible: false)
-                    
-                }
+
                 print("updateMealInformation - ", self.mealInformation as Any)
                 updateGroup.leave()
             }
@@ -1483,22 +1476,13 @@ final class LoopDataManager {
         let updateGroup = DispatchGroup()
         updateGroup.enter()
         // since last bolus, but not more than 30 minutes
-        carbStore.getCarbEntries(start: since) { (result) in
-            
-            switch result {
-            case .success(let values):
-                
-                for value in values {
-                    carbs = carbs + value.quantity.doubleValue(for: HKUnit.gram())
-                    
-                }
-
-            case .failure(let error):
-                // TODO(Erik) This should actually result in an error communicated to the user.
-                self.addInternalNote("recommendBolusCarbOnly - Error - \(error.localizedDescription)")
-
+        carbStore.getCachedCarbEntries(start: since) { (values) in
+        
+            for value in values {
+                carbs = carbs + value.quantity.doubleValue(for: HKUnit.gram())
                 
             }
+        
             updateGroup.leave()
         }
         updateGroup.wait()
