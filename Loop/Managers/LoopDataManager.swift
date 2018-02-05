@@ -1488,11 +1488,11 @@ final class LoopDataManager {
         updateGroup.wait()
         let carbRatio = carbRatioRange.quantity(at: Date()).doubleValue(for: HKUnit.gram())
         let recommendation = round(carbs / carbRatio * 10) / 10
-        
-        print("recommendBolusCarbOnly - Ratio \(carbRatio) - Carbs \(carbs) - Since \(since)")
-        self.addInternalNote("recommendBolusCarbOnly - Ratio \(carbRatio) - Carbs \(carbs) - Since \(since)")
         do {
             let pendingInsulin = try self.getPendingInsulin()
+            if recommendation > 0 {
+               self.addInternalNote("recommendBolusCarbOnly - Ratio \(carbRatio) - Carbs \(carbs) - Since \(since) - recommendation \(recommendation) U")
+            }
             return BolusRecommendation(amount: recommendation, pendingInsulin: pendingInsulin, notice: .carbOnly(carbs: carbs))
         } catch {
             return nil
