@@ -581,11 +581,19 @@ final class DeviceDataManager {
         }
 
         // If we don't have recent pump data, or the pump was recently rewound, read new pump data before bolusing.
+        // TODO(Erik): This could be simplified.
         if  loopManager.doseStore.lastReservoirValue == nil ||
             loopManager.doseStore.lastReservoirVolumeDrop < 0 ||
-            loopManager.doseStore.lastReservoirValue!.startDate.timeIntervalSinceNow <= TimeInterval(minutes: -6)
+            loopManager.doseStore.lastReservoirValue!.startDate.timeIntervalSinceNow <=
+                -loopManager.recencyInterval
         {
-            notify(LoopError.pumpDataTooOld(date: Date()))
+            if loopManager.doseStore.lastReservoirVolumeDrop < 0 {
+                notify(LoopError.invalidData(details: "Last Reservoir drop negative."))
+            } else if let reservoir = loopManager.doseStore.lastReservoirValue {
+                notify(LoopError.pumpDataTooOld(date: reservoir.startDate))
+            } else {
+                notify(LoopError.missingDataError(details: "Reservoir Value missing", recovery: "Keep phone close."))
+            }
             assertCurrentPumpData()
             
             /* DO NOT try to read and set bolus, but rather have bolus retried later
@@ -824,17 +832,24 @@ final class DeviceDataManager {
     
     // MARK: - Bluetooth restart magic
     private var btMagicDate : Date = Date()
-    func maybeToggleBluetooth(_ source: String) {
+    func maybeToggleBluetooth(_ source: String, force: Bool = false) {
 
         var restartReason : String? = nil
         if let reservoir = loopManager.doseStore.lastReservoirValue,
-            reservoir.startDate.timeIntervalSinceNow <= -TimeInterval(minutes: -30) {
+            reservoir.startDate.timeIntervalSinceNow <= TimeInterval(minutes: -30) {
             restartReason = "pump"
         } else if let glucose = loopManager.glucoseStore.latestGlucose,
-            glucose.startDate.timeIntervalSinceNow <= -TimeInterval(minutes: -30) {
+            glucose.startDate.timeIntervalSinceNow <= TimeInterval(minutes: -30) {
             restartReason = "cgm"
         }
         
+        if let bluetoothManagerHandler = BluetoothManagerHandler.sharedInstance() {
+            if !bluetoothManagerHandler.enabled() {
+                loopManager.addInternalNote("maybeToggleBluetooth - enable - because it was disabled")
+                bluetoothManagerHandler.enable()
+                bluetoothManagerHandler.setPower(true)
+            }
+        }
         guard let reason = restartReason else {
             return
         }
@@ -844,10 +859,16 @@ final class DeviceDataManager {
         }
         loopManager.addInternalNote("maybeToggleBluetooth - \(source) - Reason \(reason) - Restarting Bluetooth, no data for 30 minutes (could also be out of range)")
         if let bluetoothManagerHandler = BluetoothManagerHandler.sharedInstance() {
+            loopManager.addInternalNote("maybeToggleBluetooth - disable")
             bluetoothManagerHandler.disable()
-            //DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: {
+            bluetoothManagerHandler.setPower(false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: {
+                self.loopManager.addInternalNote("maybeToggleBluetooth - enable")
+                bluetoothManagerHandler.setPower(true)
                 bluetoothManagerHandler.enable()
-            //})
+            })
+        } else {
+            loopManager.addInternalNote("maybeToggleBluetooth - BluetoothManagerHandler not available")
         }
         btMagicDate = Date()
     }
