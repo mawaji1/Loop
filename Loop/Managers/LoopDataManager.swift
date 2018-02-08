@@ -12,6 +12,7 @@ import GlucoseKit
 import HealthKit
 import InsulinKit
 import LoopKit
+import UserNotifications
 
 
 final class LoopDataManager {
@@ -51,7 +52,7 @@ final class LoopDataManager {
         self.delegate = delegate
         self.logger = DiagnosticLogger.shared!.forCategory("LoopDataManager")
         self.insulinCounteractionEffects = insulinCounteractionEffects ?? []
-        self.lastLoopCompleted = lastLoopCompleted
+        self.lastLoopCompleted = Date() //lastLoopCompleted
         self.lastTempBasal = lastTempBasal
         self.settings = settings
 
@@ -338,12 +339,25 @@ final class LoopDataManager {
     ///   - units: The bolus amount, in units
     ///   - date: The date the bolus was enacted
     func addConfirmedBolus(units: Double, at date: Date, completion: (() -> Void)?) {
-        self.doseStore.addPendingPumpEvent(.enactedBolus(units: units, at: date)) {
+//        self.doseStore.addPendingPumpEvent(.enactedBolus(units: units, at: date)) {
+//            self.dataAccessQueue.async {
+//                self.lastRequestedBolus = nil
+//                self.insulinEffect = nil
+//                self.notify(forChange: .bolus)
+//
+//                completion?()
+//            }
+//        }
+        var bolusevent: [NewPumpEvent] = []
+        var title: String
+        var dose: DoseEntry?
+        dose = DoseEntry(type: .bolus, startDate: date, endDate: date, value: units, unit: .units)
+        title = "Bolus"
+        bolusevent.append(NewPumpEvent(date: date, dose: dose, isMutable: false, raw: Data(), title: title, type: .bolus))
+        doseStore.addPumpEvents(bolusevent) { (error) in
             self.dataAccessQueue.async {
                 self.lastRequestedBolus = nil
                 self.insulinEffect = nil
-                self.notify(forChange: .bolus)
-
                 completion?()
             }
         }
@@ -444,7 +458,7 @@ final class LoopDataManager {
                     self.lastLoopCompleted = Date()
                 }
             } catch let error {
-                self.lastLoopError = error
+                self.lastLoopCompleted = Date() //self.lastLoopError = error
             }
 
             self.notify(forChange: .tempBasal)
@@ -849,10 +863,10 @@ final class LoopDataManager {
             throw LoopError.missingDataError(details: "Glucose", recovery: "Check your CGM data source")
         }
 
-        guard let pumpStatusDate = doseStore.lastReservoirValue?.startDate else {
-            self.predictedGlucose = nil
-            throw LoopError.missingDataError(details: "Reservoir", recovery: "Check that your pump is in range")
-        }
+//        guard let pumpStatusDate = doseStore.lastReservoirValue?.startDate else {
+//            self.predictedGlucose = nil
+//            throw LoopError.missingDataError(details: "Reservoir", recovery: "Check that your pump is in range")
+//        }
 
         let startDate = Date()
 
@@ -861,10 +875,10 @@ final class LoopDataManager {
             throw LoopError.glucoseTooOld(date: glucose.startDate)
         }
 
-        guard startDate.timeIntervalSince(pumpStatusDate) <= recencyInterval else {
-            self.predictedGlucose = nil
-            throw LoopError.pumpDataTooOld(date: pumpStatusDate)
-        }
+//        guard startDate.timeIntervalSince(pumpStatusDate) <= recencyInterval else {
+//            self.predictedGlucose = nil
+//            throw LoopError.pumpDataTooOld(date: pumpStatusDate)
+//        }
 
         guard glucoseMomentumEffect != nil, carbEffect != nil, insulinEffect != nil else {
             self.predictedGlucose = nil
@@ -901,6 +915,12 @@ final class LoopDataManager {
         }
 
         recommendedTempBasal = (recommendation: tempBasal, date: Date())
+        // Temp Basal Notifications
+        let TemBasalNotificationThreshold: Double = 6
+        guard recommendedTempBasal != nil && (recommendedTempBasal?.recommendation.unitsPerHour)! > TemBasalNotificationThreshold else {
+            return
+        }
+        self.addLoopTempBasalNotification()
     }
 
     /// - Returns: A bolus recommendation from the current data
@@ -1098,6 +1118,26 @@ extension LoopDataManager {
 
             handler(self, LoopStateView(loopDataManager: self, updateError: updateError))
         }
+    }
+    // Temp Baseal Notifiction Function
+    func addLoopTempBasalNotification() {
+        let unit = HKUnit.milligramsPerDeciliter()
+        let bg = Int((self.glucoseStore?.latestGlucose)!.quantity.doubleValue(for: unit))
+        let rate = round(100*((((self.recommendedTempBasal?.recommendation)?.unitsPerHour)! - 1.5) / 2))/100
+        let eventualBG = Int((self.predictedGlucose)!.last!.quantity.doubleValue(for: unit))
+        let center = UNUserNotificationCenter.current()
+        let content = UNMutableNotificationContent()
+        content.title = NSLocalizedString("Bolus Recommendation", comment: "The notification title for a recommended temp basal")
+        let Msg = "Current BG: \(bg), Bolus: \(rate) U, EventualBG: \(eventualBG)"
+        content.body = NSLocalizedString(Msg, comment: "The notification alert describing a recommended bolus")
+        content.sound = UNNotificationSound.default()
+        let identifier = "BolusMsg"
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        center.add(request, withCompletionHandler: { (error) in
+            if let error = error {
+                // Something went wrong
+            }
+        })
     }
 }
 
