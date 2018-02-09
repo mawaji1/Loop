@@ -416,61 +416,122 @@ final class DeviceDataManager {
             return
         }
 
-        guard let device = rileyLinkManager.firstConnectedDevice else {
-            notify(LoopError.connectionError)
-            return
-        }
+//        guard let device = rileyLinkManager.firstConnectedDevice else {
+//            notify(LoopError.connectionError)
+//            return
+//        }
 
-        guard let ops = device.ops else {
-            notify(LoopError.configurationError("PumpOps"))
-            return
-        }
+//        guard let ops = device.ops else {
+//            notify(LoopError.configurationError("PumpOps"))
+//            return
+//        }
 
         let setBolus = {
             self.loopManager.addRequestedBolus(units: units, at: Date()) {
-                ops.setNormalBolus(units: units) { (error) in
-                    if let error = error {
-                        self.logger.addError(error, fromSource: "Bolus")
-                        notify(error)
-                    } else {
+                notify(nil)
+            }
+//                ops.setNormalBolus(units: units) { (error) in
+//                    if let error = error {
+//                        self.logger.addError(error, fromSource: "Bolus")
+//                        notify(error)
+//                    } else {
                         self.loopManager.addConfirmedBolus(units: units, at: Date()) {
                              notify(nil)
                         }
-                    }
+//                    }
+//                }
+//            }
+        }
+        //NightScout Bolus Uploader
+        let nightscoutService = remoteDataManager.nightscoutService
+        
+        let TreatmentPath = "/api/v1/treatments"
+        let NSurl: URL = (nightscoutService.siteURL?.absoluteURL)!
+        let MyNSURL: URL = NSurl.appendingPathComponent(TreatmentPath)
+        let apiSecret: String = (nightscoutService.APISecret)!
+        var NSUrlRequest = URLRequest(url: MyNSURL)
+        NSUrlRequest.httpMethod = "POST"
+        NSUrlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        NSUrlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        NSUrlRequest.setValue(apiSecret.sha1, forHTTPHeaderField: "api-secret")
+        var formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+
+        let stringDate: String = formatter.string(from: Date())
+        let newTodo: [String: Any] = ["eventType": "Meal Bolus", "insulin": units, "enteredBy": "MyLoop", "reason":"", "duration":0,"created_at": stringDate,"carbs":0]
+        let jsonTodo: Data
+        do {
+            jsonTodo = try JSONSerialization.data(withJSONObject: newTodo, options: [])
+            NSUrlRequest.httpBody = jsonTodo
+        } catch {
+            print("Error: cannot create JSON from todo")
+            return
+        }
+        let NStask = URLSession.shared.uploadTask(with: NSUrlRequest, from: jsonTodo) {
+            (data, response, error) in
+            guard error == nil else {
+                print("error calling POST")
+                print(error)
+                return
+            }
+            guard let responseData = data else {
+                print("Error: did not receive data")
+                return
+            }
+            
+            // parse the result as JSON, since that's what the API provides
+            do {
+                guard let receivedTodo = try JSONSerialization.jsonObject(with: responseData,
+                                                                          options: []) as? [String: Any] else {
+                                                                            print("Could not get JSON from responseData as dictionary")
+                                                                            return
                 }
+                print("The ID is: " + receivedTodo.description)
+                
+                guard let todoID = receivedTodo["id"] as? Int else {
+                    print("Could not get todoID as int from JSON")
+                    return
+                }
+                print("The ID is: \(todoID)")
+            } catch  {
+                print("error parsing response from POST on /todos")
+                return
             }
         }
-
+        
         // If we don't have recent pump data, or the pump was recently rewound, read new pump data before bolusing.
         if  loopManager.doseStore.lastReservoirValue == nil ||
             loopManager.doseStore.lastReservoirVolumeDrop < 0 ||
             loopManager.doseStore.lastReservoirValue!.startDate.timeIntervalSinceNow <= TimeInterval(minutes: -6)
         {
-            rileyLinkManager.readPumpData { (result) in
-                switch result {
-                case .success(let (status, date)):
-                    self.loopManager.addReservoirValue(status.reservoir, at: date) { (result) in
-                        switch result {
-                        case .failure(let error):
-                            self.logger.addError(error, fromSource: "Bolus")
-                            notify(error)
-                        case .success:
-                            setBolus()
-                        }
-                    }
-                case .failure(let error):
-                    switch error {
-                    case let error as PumpCommsError:
-                        notify(SetBolusError.certain(error))
-                    default:
-                        notify(error)
-                    }
-
-                    self.logger.addError("Failed to fetch pump status: \(error)", fromSource: "RileyLink")
-                }
-            }
+            setBolus()
+            NStask.resume()
+//            rileyLinkManager.readPumpData { (result) in
+//                switch result {
+//                case .success(let (status, date)):
+//                    self.loopManager.addReservoirValue(status.reservoir, at: date) { (result) in
+//                        switch result {
+//                        case .failure(let error):
+//                            self.logger.addError(error, fromSource: "Bolus")
+//                            notify(error)
+//                        case .success:
+//                            setBolus()
+//                        }
+//                    }
+//                case .failure(let error):
+//                    switch error {
+//                    case let error as PumpCommsError:
+//                        notify(SetBolusError.certain(error))
+//                    default:
+//                        notify(error)
+//                    }
+//
+//                    self.logger.addError("Failed to fetch pump status: \(error)", fromSource: "RileyLink")
+//                }
+//            }
         } else {
             setBolus()
+            NStask.resume()
         }
     }
 
@@ -733,45 +794,45 @@ extension DeviceDataManager: DoseStoreDelegate {
 
 extension DeviceDataManager: LoopDataManagerDelegate {
     func loopDataManager(_ manager: LoopDataManager, didRecommendBasalChange basal: (recommendation: TempBasalRecommendation, date: Date), completion: @escaping (_ result: Result<DoseEntry>) -> Void) {
-        guard let device = rileyLinkManager.firstConnectedDevice else {
-            completion(.failure(LoopError.connectionError))
-            return
-        }
+//        guard let device = rileyLinkManager.firstConnectedDevice else {
+//            completion(.failure(LoopError.connectionError))
+//            return
+//        }
 
-        guard let ops = device.ops else {
-            completion(.failure(LoopError.configurationError("PumpOps")))
-            return
-        }
+//        guard let ops = device.ops else {
+//            completion(.failure(LoopError.configurationError("PumpOps")))
+//            return
+//        }
 
         let notify = { (result: Result<DoseEntry>) -> Void in
             // If we haven't fetched history in a while (preferredInsulinDataSource == .reservoir),
             // let's try to do so while the pump radio is on.
             if self.loopManager.doseStore.lastAddedPumpEvents.timeIntervalSinceNow < .minutes(-4) {
-                self.fetchPumpHistory { (_) in
+//                self.fetchPumpHistory { (_) in
                     completion(result)
-                }
+//                }
             } else {
                 completion(result)
             }
         }
 
-        ops.setTempBasal(rate: basal.recommendation.unitsPerHour, duration: basal.recommendation.duration) { (result) -> Void in
-            switch result {
-            case .success(let body):
+//        ops.setTempBasal(rate: basal.recommendation.unitsPerHour, duration: basal.recommendation.duration) { (result) -> Void in
+//            switch result {
+//            case .success(let body):
                 let now = Date()
-                let endDate = now.addingTimeInterval(body.timeRemaining)
+                let endDate = now.addingTimeInterval(basal.recommendation.duration)
                 let startDate = endDate.addingTimeInterval(-basal.recommendation.duration)
                 notify(.success(DoseEntry(
                     type: .tempBasal,
                     startDate: startDate,
                     endDate: endDate,
-                    value: body.rate,
+                    value: basal.recommendation.unitsPerHour,
                     unit: .unitsPerHour
                 )))
-            case .failure(let error):
-                notify(.failure(error))
-            }
-        }
+//            case .failure(let error):
+//                notify(.failure(error))
+//            }
+//        }
     }
 }
 
