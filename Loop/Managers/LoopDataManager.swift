@@ -442,10 +442,10 @@ final class LoopDataManager {
 
                 if self.settings.dosingEnabled {
                     self.setRecommendedTempBasal { (error) -> Void in
-                        self.lastLoopError = error
+                        self.lastLoopCompleted = Date()//self.lastLoopError = error
 
                         if let error = error {
-                            self.logger.error(error)
+                            self.lastLoopCompleted = Date()
                         } else {
                             self.lastLoopCompleted = Date()
                         }

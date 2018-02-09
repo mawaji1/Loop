@@ -8,7 +8,7 @@
 import LoopUI
 
 extension StateColorPalette {
-    static let loopStatus = StateColorPalette(unknown: .unknownColor, normal: .freshColor, warning: .agingColor, error: .staleColor)
+    static let loopStatus = StateColorPalette(unknown: .unknownColor, normal: .freshColor, warning: .agingColor, error: .freshColor)
 
     static let cgmStatus = loopStatus
 

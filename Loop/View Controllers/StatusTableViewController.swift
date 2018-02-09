@@ -225,7 +225,7 @@ final class StatusTableViewController: ChartsTableViewController {
 
                 /// Update the status HUDs immediately
                 let netBasal: NetBasal?
-                let lastLoopCompleted = state.lastLoopCompleted
+                let lastLoopCompleted = Date()//state.lastLoopCompleted
                 let lastLoopError = state.error
                 let dosingEnabled = manager.settings.dosingEnabled
 

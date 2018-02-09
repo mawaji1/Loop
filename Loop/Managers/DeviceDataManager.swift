@@ -325,30 +325,30 @@ final class DeviceDataManager {
     ///   - completion: A closure called once upon completion
     ///   - error: An error describing why the fetch and/or store failed
     fileprivate func fetchPumpHistory(_ completion: @escaping (_ error: Error?) -> Void) {
-        guard let device = rileyLinkManager.firstConnectedDevice else {
-            completion(LoopError.connectionError)
-            return
-        }
+//        guard let device = rileyLinkManager.firstConnectedDevice else {
+//            completion(LoopError.connectionError)
+//            return
+//        }
 
-        let startDate = loopManager.doseStore.pumpEventQueryAfterDate
+//        let startDate = loopManager.doseStore.pumpEventQueryAfterDate
 
-        device.ops?.getHistoryEvents(since: startDate) { (result) in
-            switch result {
-            case let .success(events, model):
-                self.loopManager.addPumpEvents(events, from: model) { (error) in
-                    if let error = error {
-                        self.logger.addError("Failed to store history: \(error)", fromSource: "DoseStore")
-                    }
+//        device.ops?.getHistoryEvents(since: startDate) { (result) in
+//            switch result {
+//               let .success(events, model):
+//                self.loopManager.addPumpEvents(events, from: model) { (error) in
+//                    if let error = error {
+//                        self.logger.addError("Failed to store history: \(error)", fromSource: "DoseStore")
+//                    }
+//
+//                    completion(error)
+//                }
+//            case .failure(let error):
+//                self.rileyLinkManager.deprioritizeDevice(device: device)
+//                self.logger.addError("Failed to fetch history: \(error)", fromSource: "RileyLink")
 
-                    completion(error)
-                }
-            case .failure(let error):
-                self.rileyLinkManager.deprioritizeDevice(device: device)
-                self.logger.addError("Failed to fetch history: \(error)", fromSource: "RileyLink")
-
-                completion(error)
-            }
-        }
+//                completion(error)
+//            }
+//        }
     }
 
     private func pumpDataIsStale() -> Bool {
@@ -363,38 +363,38 @@ final class DeviceDataManager {
      Ensures pump data is current by either waking and polling, or ensuring we're listening to sentry packets.
      */
     fileprivate func assertCurrentPumpData() {
-        guard let device = rileyLinkManager.firstConnectedDevice else {
-            self.setLastError(error: LoopError.connectionError)
-            return
-        }
+//        guard let device = rileyLinkManager.firstConnectedDevice else {
+//            self.setLastError(error: LoopError.connectionError)
+//            return
+//        }
+//
+//        device.assertIdleListening()
+//
+//        guard pumpDataIsStale() else {
+//            return
+//        }
 
-        device.assertIdleListening()
-
-        guard pumpDataIsStale() else {
-            return
-        }
-
-        rileyLinkManager.readPumpData { (result) in
-            let nsPumpStatus: NightscoutUploadKit.PumpStatus?
-            switch result {
-            case .success(let (status, date)):
-                self.observeBatteryDuring {
-                    self.latestPumpStatus = status
-                }
-
-                self.updateReservoirVolume(status.reservoir, at: date, withTimeLeft: nil)
-                let battery = BatteryStatus(voltage: status.batteryVolts, status: BatteryIndicator(batteryStatus: status.batteryStatus))
-
-                nsPumpStatus = NightscoutUploadKit.PumpStatus(clock: date, pumpID: status.pumpID, iob: nil, battery: battery, suspended: status.suspended, bolusing: status.bolusing, reservoir: status.reservoir)
-            case .failure(let error):
-                self.logger.addError("Failed to fetch pump status: \(error)", fromSource: "RileyLink")
-                self.setLastError(error: error)
-                self.troubleshootPumpComms(using: device)
-                self.nightscoutDataManager.uploadLoopStatus(loopError: error)
-                nsPumpStatus = nil
-            }
-            self.nightscoutDataManager.uploadDeviceStatus(nsPumpStatus, rileylinkDevice: device)
-        }
+//        rileyLinkManager.readPumpData { (result) in
+//            let nsPumpStatus: NightscoutUploadKit.PumpStatus?
+//            switch result {
+//            case .success(let (status, date)):
+//                self.observeBatteryDuring {
+//                    self.latestPumpStatus = status
+//                }
+//
+//                self.updateReservoirVolume(status.reservoir, at: date, withTimeLeft: nil)
+//                let battery = BatteryStatus(voltage: status.batteryVolts, status: BatteryIndicator(batteryStatus: status.batteryStatus))
+//
+//                nsPumpStatus = NightscoutUploadKit.PumpStatus(clock: date, pumpID: status.pumpID, iob: nil, battery: battery, suspended: status.suspended, bolusing: status.bolusing, reservoir: status.reservoir)
+//            case .failure(let error):
+//                self.logger.addError("Failed to fetch pump status: \(error)", fromSource: "RileyLink")
+//                self.setLastError(error: error)
+//                self.troubleshootPumpComms(using: device)
+//                self.nightscoutDataManager.uploadLoopStatus(loopError: error)
+//                nsPumpStatus = nil
+//            }
+//            self.nightscoutDataManager.uploadDeviceStatus(nsPumpStatus, rileylinkDevice: device)
+//        }
     }
 
     /// Send a bolus command and handle the result
