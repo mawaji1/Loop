@@ -106,7 +106,7 @@ final class AnalyticsManager: IdentifiableClass {
     }
 
     func didChangeLoopSettings(from oldValue: LoopSettings, to newValue: LoopSettings) {
-        if oldValue.rawValue.debugDescription != newValue.rawValue.debugDescription {
+        if oldValue.rawValue.debugDescription == newValue.rawValue.debugDescription {
             return
         }
         logEvent("Loop settings change \(oldValue.rawValue.debugDescription) \(newValue.rawValue.debugDescription)")
