@@ -71,16 +71,16 @@ final class LoopDataManager {
         carbStore = CarbStore(
             healthStore: healthStore,
             defaultAbsorptionTimes: (
-                fast: TimeInterval(hours: 1.5),
-                medium: TimeInterval(hours: 2.5),
-                slow: TimeInterval(hours: 3.5)
+                fast: TimeInterval(minutes: AbsorptionSpeed.fast.minutes),
+                medium: TimeInterval(minutes: AbsorptionSpeed.normal.minutes),
+                slow: TimeInterval(minutes: AbsorptionSpeed.slow.minutes)
             ),
             carbRatioSchedule: carbRatioSchedule,
             insulinSensitivitySchedule: insulinSensitivitySchedule
         )
         // disable overrun as it creates dangerous late lows if the
         // carb absorption is finished early (e.g. less input or sports).
-        carbStore.absorptionTimeOverrun = 1.0
+        carbStore.absorptionTimeOverrun = settings.absorptionTimeOverrun
         
         doseStore = DoseStore(
             healthStore: healthStore,

@@ -40,6 +40,23 @@ extension AbsorptionSpeed {
             return nil
         }
     }
+    
+    var minutes : Double {
+        let multiplier = UserDefaults.standard.absorptionTimeMultiplier
+        switch(self) {
+        case .ultraFast:
+                return round(multiplier * 90)
+        case .fast:
+                return round(multiplier * 120)
+        case .normal:
+                return round(multiplier * 180)
+        case .slow:
+                return round(multiplier * 240)
+        }
+    }
+    var seconds : Double {
+        return minutes * 60
+    }
 }
 
 struct FoodItem {
@@ -100,20 +117,8 @@ struct FoodPick : CustomStringConvertible {
         } catch {
             // TODO(Erik)
         }
-
-        var absorptionMinutes = 180
-        switch(item.absorption) {
-        case .ultraFast:
-            absorptionMinutes = 60
-        case .fast:
-            absorptionMinutes = 90
-        case .normal:
-            absorptionMinutes = 150
-        case .slow:
-            absorptionMinutes = 210
-        }
         return NewCarbEntry(quantity: quantity, startDate: date, foodType: foodType,
-                            absorptionTime: Double(absorptionMinutes * 60))
+                            absorptionTime: item.absorption.seconds)
     }
     
     var carbs : Double {
