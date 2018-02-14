@@ -78,7 +78,10 @@ final class LoopDataManager {
             carbRatioSchedule: carbRatioSchedule,
             insulinSensitivitySchedule: insulinSensitivitySchedule
         )
-
+        // disable overrun as it creates dangerous late lows if the
+        // carb absorption is finished early (e.g. less input or sports).
+        carbStore.absorptionTimeOverrun = 1.0
+        
         doseStore = DoseStore(
             healthStore: healthStore,
             insulinModel: insulinModelSettings?.model,
@@ -347,7 +350,6 @@ final class LoopDataManager {
     func addRequestedBolus(units: Double, at date: Date, completion: (() -> Void)?) {
         dataAccessQueue.async {
             self.addInternalNote("Bolus Requested: \(units) \(date)")
-            self.carbUndoPossible = nil
             self.recommendedBolus = nil
             self.lastPendingBolus = nil
             self.lastFailedBolus = nil
@@ -377,6 +379,8 @@ final class LoopDataManager {
                 self.lastAutomaticBolus = date  // keep this as a date, irrespective of automatic or not
                 self.recommendedBolus = nil
                 self.insulinEffect = nil
+                // self.carbUndoPossible = requestDate
+
                 self.notify(forChange: .bolus)
                 do {
                     try self.update()
