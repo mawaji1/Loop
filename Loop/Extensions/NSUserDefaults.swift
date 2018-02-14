@@ -39,6 +39,8 @@ extension UserDefaults {
         case lastUploadedNightscoutProfile = "com.loopkit.Loop.lastUploadedNightscoutProfile"
         
         case pendingTreatments = "com.loopkit.Loop.pendingTreatments"
+        
+        case absorptionTimeMultiplier = "com.loopkit.Loop.absorptionTimeMultiplier"
     }
 
     var basalRateSchedule: BasalRateSchedule? {
@@ -384,6 +386,19 @@ extension UserDefaults {
         }
     }
     
+    var absorptionTimeMultiplier : Double {
+        get {
+            let value = double(forKey: Key.absorptionTimeMultiplier.rawValue)
+            // default
+            if value <= 0.0 {
+                return 0.8
+            }
+            return value
+        }
+        set {
+            set(newValue, forKey: Key.absorptionTimeMultiplier.rawValue)
+        }
+    }
 
 
     var lastUploadedNightscoutProfile: String {
