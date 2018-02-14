@@ -82,11 +82,15 @@ struct TreatmentInformation {
             val = "Data old, pump in reach?"
         case .recommended:
             if units > 0 {
-                if bolusEnabled {
+                let _ = bolusEnabled
+                /*if bolusEnabled {
                     val = "Will be automatically given."
-                } else {
-                    val = "Tap to deliver."
-                }
+                } else {*/
+                // In the carb only case this determination is not correct.
+                // Rather be safe and tell the user to tap, but have their back
+                // if they don't.
+                    val = "Tap to deliver now."
+                //}
             } else if carbs > 0 {
                 let i = Int(carbs)
                 val = "Eat \(i) g fast acting carbs like juice, glucose tabs, etc."
