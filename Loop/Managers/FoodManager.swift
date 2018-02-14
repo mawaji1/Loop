@@ -104,13 +104,13 @@ struct FoodPick : CustomStringConvertible {
         var absorptionMinutes = 180
         switch(item.absorption) {
         case .ultraFast:
-            absorptionMinutes = 90
+            absorptionMinutes = 60
         case .fast:
-            absorptionMinutes = 120
+            absorptionMinutes = 90
         case .normal:
-            absorptionMinutes = 180
+            absorptionMinutes = 150
         case .slow:
-            absorptionMinutes = 240
+            absorptionMinutes = 210
         }
         return NewCarbEntry(quantity: quantity, startDate: date, foodType: foodType,
                             absorptionTime: Double(absorptionMinutes * 60))
