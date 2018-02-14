@@ -27,7 +27,7 @@ final class QuickCarbEntryViewController: UITableViewController, IdentifiableCla
     var carbStore: CarbStore?
     var mealInformation: LoopDataManager.MealInformation?
     
-    private var absorptionTime : Int = 180
+    // private var absorptionTime : Int = 180
     var carbs : CarbEntry? = nil
     var glucose : HKQuantity? = nil
     private var internalGlucose : Int = 0
@@ -220,9 +220,9 @@ final class QuickCarbEntryViewController: UITableViewController, IdentifiableCla
 
         if self.internalCarbs > 0 {
             let quantity = HKQuantity(unit: HKUnit.gram(), doubleValue: Double(self.internalCarbs))
-                absorptionTime = 180
+                let absorptionTime = AbsorptionSpeed.normal.seconds
                 self.carbs = NewCarbEntry(quantity: quantity, startDate: Date(), foodType: self.foodType,
-                                          absorptionTime: Double(absorptionTime * 60))
+                                          absorptionTime: absorptionTime)
         }
         
         if self.internalGlucose > 0 && glucoseIsModified {
