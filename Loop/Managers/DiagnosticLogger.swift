@@ -27,6 +27,8 @@ final class DiagnosticLogger {
         }
     }
 
+    public var loopManager : LoopDataManager? = nil
+
     let remoteLogLevel: OSLogType
 
     static var shared: DiagnosticLogger?
@@ -103,6 +105,16 @@ final class CategoryLogger {
             logger.mLabService.uploadTaskWithData(messageData, inCollection: category)?.resume()
         }
     }
+    
+    private func loopLog(_ type: OSLogType, message: [String: Any]) {
+        loopLog(type, message: message.debugDescription)
+    }
+    
+    private func loopLog(_ type: OSLogType, message: String) {
+        if let loop = self.logger.loopManager {
+            loop.addDebugNote("Logger: \(category) \(type.tagName) \(message)")
+        }
+    }
 
     func debug(_ message: [String: Any]) {
         systemLog.debug("%{public}@", String(describing: message))
@@ -127,11 +139,13 @@ final class CategoryLogger {
     func error(_ message: [String: Any]) {
         systemLog.error("%{public}@", String(reflecting: message))
         remoteLog(.error, message: message)
+        loopLog(.error, message: message)
     }
 
     func error(_ message: String) {
         systemLog.error("%{public}@", message)
         remoteLog(.error, message: message)
+        loopLog(.error, message: message)
     }
 
     func error(_ error: Error) {

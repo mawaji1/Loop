@@ -28,6 +28,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let bundle = Bundle(for: type(of: self))
         DiagnosticLogger.shared = DiagnosticLogger(subsystem: bundle.bundleIdentifier!, version: bundle.shortVersionString)
         DiagnosticLogger.shared?.forCategory("AppDelegate").info(#function)
+        DiagnosticLogger.shared?.loopManager = deviceManager.loopManager
 
         AnalyticsManager.shared.application(application, didFinishLaunchingWithOptions: launchOptions)
         AnalyticsManager.shared.loopManager = deviceManager.loopManager
