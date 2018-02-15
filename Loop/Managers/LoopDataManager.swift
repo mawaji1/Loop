@@ -370,8 +370,6 @@ final class LoopDataManager {
         self.addInternalNote("Bolus Confirmed: \(units) \(date)")
         self.doseStore.addPendingPumpEvent(event) {
             self.dataAccessQueue.async {
-                self.addInternalNote("Bolus Confirmed Callback: \(units) \(date)")
-
                 let requestDate = self.lastRequestedBolus?.date ?? date
                 self.lastPendingBolus = (units: units, date: requestDate, reservoir: self.doseStore.lastReservoirValue, event: event)
                 self.lastRequestedBolus = nil
@@ -394,6 +392,7 @@ final class LoopDataManager {
 
     func addFailedBolus(units: Double, at date: Date, error: Error, completion: (() -> Void)?) {
         dataAccessQueue.async {
+            self.addInternalNote("Bolus Failed: \(units) \(date) \(error)")
             self.lastFailedBolus = (units: units, date: date, error: error)
             self.lastPendingBolus = nil
             self.recommendedBolus = nil
@@ -1587,7 +1586,7 @@ final class LoopDataManager {
         let currentGlucose = predictedGlucose.first!.quantity.doubleValue(for: unit)
         if currentGlucose > 250 {
             if self.lastLowNotification != nil {
-                self.addInternalNote("sendGlucoseFutureLowNotifications clear because currentGlucose > 250 \(currentGlucose)")
+                //self.addInternalNote("sendGlucoseFutureLowNotifications clear because currentGlucose > 250 \(currentGlucose)")
                 NotificationManager.clearGlucoseFutureLowNotifications()
                 self.lastLowNotification = nil
             }
@@ -1600,7 +1599,7 @@ final class LoopDataManager {
         if let lastValue = lastValue, lastValue > min {
             // no warning if we eventually get over it.
             if self.lastLowNotification != nil {
-                self.addInternalNote("sendGlucoseFutureLowNotifications clear because lastValue > min \(lastValue) \(min)")
+                //self.addInternalNote("sendGlucoseFutureLowNotifications clear because lastValue > min \(lastValue) \(min)")
                 NotificationManager.clearGlucoseFutureLowNotifications()
                 
                 self.lastLowNotification = nil
@@ -1618,21 +1617,22 @@ final class LoopDataManager {
             // Always round up to next 10 carbs.
             let roundedCarbs = round((carbs + 5) / 10) * 10
             let minutes = Int(lowDate.timeIntervalSince(currentDate) / 60)
-            addInternalNote("sendGlucoseFutureLowNotifications: Low in \(minutes) minutes, target: \(target), threshold: \(min), minimal glucose: \(minValue), carbs: \(roundedCarbs), last: \(String(describing: lastLowNotification))")
             if minutes > 0 {
                 
                 if let lastLow = lastLowNotification, lowDate > lastLow.date, minValue > lastLow.value {
                     // too close or going up again.
-                    addInternalNote("sendGlucoseFutureLowNotifications too close")
+//                    addInternalNote("sendGlucoseFutureLowNotifications too close")
                 } else {
-                    addInternalNote( "sendGlucoseFutureLowNotifications sent")
+                    addInternalNote("sendGlucoseFutureLowNotifications: Low in \(minutes) minutes, target: \(target), threshold: \(min), minimal glucose: \(minValue), carbs: \(roundedCarbs), last: \(String(describing: lastLowNotification))")
+
+//                    addInternalNote( "sendGlucoseFutureLowNotifications sent")
                     NotificationManager.sendGlucoseFutureLowNotifications(currentDate: currentDate, lowDate: lowDate, target: round(min), glucose: minValue, carbs: roundedCarbs)
                 }
                 lastLowNotification = (lowDate, minValue, roundedCarbs)
             }
         } else {
             if self.lastLowNotification != nil {
-                addInternalNote("sendGlucoseFutureLowNotifications clear because no lowDate or minDate")
+                //addInternalNote("sendGlucoseFutureLowNotifications clear because no lowDate or minDate")
                 NotificationManager.clearGlucoseFutureLowNotifications()
                 
                 self.lastLowNotification = nil
