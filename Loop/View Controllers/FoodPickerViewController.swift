@@ -70,11 +70,12 @@ final class NewFoodPickerViewController: UIViewController, UICollectionViewDataS
                 imageIdentifier = previewFileName
             }
             print("save image", imageIdentifier as Any)
-            foodPick = FoodPick(item: item, ratio: ratio, date: Date(), imageIdentifier: imageIdentifier)
-
-            foodManager?.record(foodPick!)
+            let pick = FoodPick(item: item, ratio: ratio, date: Date(), imageIdentifier: imageIdentifier)
+            foodPick = pick
+            foodManager?.record(pick)
             previewImage = nil
             previewFileName = nil
+            AnalyticsManager.shared.didAddCarbsFromFoodPicker(pick)
             self.performSegue(withIdentifier: "close", sender: nil)
         }
     }
@@ -130,6 +131,10 @@ final class NewFoodPickerViewController: UIViewController, UICollectionViewDataS
         updateTopControls(indexPath: selected)
     }
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        AnalyticsManager.shared.didDisplayFoodPicker()
+    }
     
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
