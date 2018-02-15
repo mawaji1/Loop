@@ -136,6 +136,7 @@ final class QuickCarbEntryViewController: UITableViewController, IdentifiableCla
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        AnalyticsManager.shared.didDisplayQuickCarbScreen()
     }
     
     @IBOutlet weak var glucoseTextField: UITextField!
@@ -233,7 +234,7 @@ final class QuickCarbEntryViewController: UITableViewController, IdentifiableCla
             self.noteEntered = text
         }
         self.saved = true
-
+        AnalyticsManager.shared.didAddCarbsFromQuickCarbs(self.internalCarbs, self.internalGlucose, self.noteEntered)
         self.performSegue(withIdentifier: "close", sender: nil)
     }
     
