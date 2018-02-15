@@ -66,7 +66,9 @@ final class AnalyticsManager: IdentifiableClass {
     func didDisplayStatusScreen() {
         logEvent("Status Screen")
     }
+    
 
+    
     // MARK: - Config Events
 
     func didChangeRileyLinkConnectionState() {
@@ -145,5 +147,24 @@ final class AnalyticsManager: IdentifiableClass {
 
     func loopDidError() {
         logEvent("Loop error", outOfSession: true)
+    }
+}
+
+// PRIVATE MODIFICATIONS
+extension AnalyticsManager {
+    func didDisplayQuickCarbScreen() {
+        logEvent("QuickCarb Screen")
+    }
+    
+    func didDisplayFoodPicker() {
+        logEvent("QuickCarb Screen")
+    }
+    
+    func didAddCarbsFromQuickCarbs(_ carbs: Int, _ glucose: Int, _ note: String) {
+        logEvent("AddCarbsFromQuickCarbs \(carbs)g \(glucose) mg/dl: \(note)")
+    }
+    
+    func didAddCarbsFromFoodPicker(_ pick: FoodPick) {
+        logEvent("AddCarbsFromFoodPicker \(pick.item.title): \(pick.displayCarbs)g ")
     }
 }
