@@ -167,4 +167,7 @@ extension AnalyticsManager {
     func didAddCarbsFromFoodPicker(_ pick: FoodPick) {
         logEvent("AddCarbsFromFoodPicker \(pick.item.title): \(pick.displayCarbs)g ")
     }
+    func loopDidError(_ error: Error) {
+        logEvent("Loop error \(error.localizedDescription)", outOfSession: true)
+    }
 }
