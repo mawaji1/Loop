@@ -884,7 +884,6 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
                 }
                 if readPump {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
-                        self.deviceManager.loopManager.addDebugNote("triggering Pump Data read from statustableviewcontroller")
                         self.deviceManager.triggerPumpDataRead()
                     }
                 }
