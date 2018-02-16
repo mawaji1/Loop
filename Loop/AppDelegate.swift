@@ -111,7 +111,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 extension AppDelegate {
     
     func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
-        deviceManager.loopManager.addInternalNote("background-fetch")
+        // deviceManager.loopManager.addInternalNote("background-fetch")
         deviceManager.maybeToggleBluetooth("background-fetch")
         
         guard let url = URL(string: "http://www.example.com") else { return }
