@@ -112,6 +112,9 @@ final class CategoryLogger {
     
     private func loopLog(_ type: OSLogType, message: String) {
         if let loop = self.logger.loopManager {
+            if message.range(of: "NightscoutUploader") != nil {
+                return
+            }
             loop.addDebugNote("Logger: \(category) \(type.tagName) \(message)")
         }
     }
