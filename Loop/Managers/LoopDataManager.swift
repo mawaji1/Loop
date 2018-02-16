@@ -861,8 +861,8 @@ final class LoopDataManager {
     }
     fileprivate var lastLoopError: Error? {
         didSet {
-            if lastLoopError != nil {
-                AnalyticsManager.shared.loopDidError()
+            if let error = lastLoopError {
+                AnalyticsManager.shared.loopDidError(error)
             }
         }
     }
@@ -1450,6 +1450,10 @@ final class LoopDataManager {
                         self.mealInformationNeedsUpdate = true
                         defer {
                             self.notify(forChange: .carbs)
+                        }
+                        DispatchQueue.main.async {
+                                // TODO: CarbStore doesn't automatically post this for deletes
+                                NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self)
                         }
                     }
                     if error != nil {
