@@ -43,3 +43,8 @@
 -  Add ice cream
 -  Reduce milk and chocolate default to 200 ml
 -  Check if fries carbs are correct.
+
+
+## Nightscout Logging
+
+-  Limit backlog to prevent crashes in no connectivity situations.
