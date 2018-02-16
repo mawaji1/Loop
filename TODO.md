@@ -8,6 +8,11 @@
 -  Feature: Edit amount after the fact.
 -  UI: Instead of carbs display selected quantity.
 
+## Future Low Warning
+
+-  Add different sounds depending on urgency of eating.
+-  Use the same code path as the Bolus calculation.
+
 ## Activity
 
 -  Feature: Log workout mode and disconnect as Exercise in Nightscout (requires
