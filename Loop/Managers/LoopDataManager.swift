@@ -1540,7 +1540,7 @@ final class LoopDataManager {
 //    }
 //
     
-    private var lastLowNotification : (date: Date, value: Double, carbs: Double)?
+    private var lastLowNotification : (at: Date, date: Date, value: Double, carbs: Double)?
     private let lowWarningMinutesLookAhead : Double = 30
     private func maybeSendFutureLowNotification() throws {
         // TODO sendGlucoseFutureLowNotifications if appropriate
@@ -1626,13 +1626,15 @@ final class LoopDataManager {
                 if let lastLow = lastLowNotification, lowDate > lastLow.date, minValue > lastLow.value {
                     // too close or going up again.
 //                    addInternalNote("sendGlucoseFutureLowNotifications too close")
+                } else if let lastLow = lastLowNotification, lastLow.at.timeIntervalSinceNow > TimeInterval(minutes: -5) {
+                    // only sent a notification once every 5 minutes.
                 } else {
                     addInternalNote("sendGlucoseFutureLowNotifications: Low in \(minutes) minutes, target: \(target), threshold: \(min), minimal glucose: \(minValue), carbs: \(roundedCarbs), last: \(String(describing: lastLowNotification))")
 
 //                    addInternalNote( "sendGlucoseFutureLowNotifications sent")
                     NotificationManager.sendGlucoseFutureLowNotifications(currentDate: currentDate, lowDate: lowDate, target: round(min), glucose: minValue, carbs: roundedCarbs)
+                    lastLowNotification = (currentDate, lowDate, minValue, roundedCarbs)
                 }
-                lastLowNotification = (lowDate, minValue, roundedCarbs)
             }
         } else {
             if self.lastLowNotification != nil {
