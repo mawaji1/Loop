@@ -245,11 +245,7 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
                 
                 self.pumpDetachedMode = state.pumpDetachedMode
                 self.treatmentInformation = state.treatmentInformation
-                if let ti = self.treatmentInformation {
-                    self.toolbarItems![4].isEnabled = ti.allowed
-                } else {
-                    self.toolbarItems![4].isEnabled = false // fail closed
-                }
+
                 
                 self.validGlucose = state.validGlucose
                 if let _ = self.validGlucose {
@@ -281,6 +277,11 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
 
                     if let netBasal = netBasal {
                         self.hudView?.basalRateHUD.setNetBasalRate(netBasal.rate, percent: netBasal.percent, at: netBasal.start)
+                    }
+                    if let ti = self.treatmentInformation {
+                        self.toolbarItems![4].isEnabled = ti.allowed
+                    } else {
+                        self.toolbarItems![4].isEnabled = false // fail closed
                     }
                 }
 
