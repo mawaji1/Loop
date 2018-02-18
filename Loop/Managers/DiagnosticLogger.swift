@@ -115,6 +115,9 @@ final class CategoryLogger {
             if message.range(of: "NightscoutUploader") != nil {
                 return
             }
+            if message.range(of: "NSURLErrorDomain") != nil {
+                return
+            }
             loop.addDebugNote("Logger: \(category) \(type.tagName) \(message)")
         }
     }
