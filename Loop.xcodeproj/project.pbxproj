@@ -187,6 +187,14 @@
 		493BDE282013A6D5004967E4 /* TreatmentInformation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 493BDE272013A6D5004967E4 /* TreatmentInformation.swift */; };
 		493BDE2F201A8B58004967E4 /* BluetoothManagerHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 493BDE2D201A8B57004967E4 /* BluetoothManagerHandler.m */; };
 		4988FFDC201A98C9007967AC /* NightscoutUploader+Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4988FFDB201A98C9007967AC /* NightscoutUploader+Profile.swift */; };
+		4988FFDF20274A6E007967AC /* future_low.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFDE20274A6E007967AC /* future_low.wav */; };
+		4988FFE320274EAA007967AC /* ding1.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE020274EA8007967AC /* ding1.wav */; };
+		4988FFE420274EAA007967AC /* ding3.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE120274EA9007967AC /* ding3.wav */; };
+		4988FFE520274EAA007967AC /* ding2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE220274EA9007967AC /* ding2.wav */; };
+		4988FFEA20274F23007967AC /* beep3.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE620274F21007967AC /* beep3.wav */; };
+		4988FFEB20274F23007967AC /* beep2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE720274F21007967AC /* beep2.wav */; };
+		4988FFEC20274F23007967AC /* beep1.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE820274F22007967AC /* beep1.wav */; };
+		4988FFED20274F23007967AC /* error.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4988FFE920274F23007967AC /* error.wav */; };
 		4D3B40041D4A9E1A00BC6334 /* G4ShareSpy.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4D3B40021D4A9DFE00BC6334 /* G4ShareSpy.framework */; };
 		4D5B7A4B1D457CCA00796CA9 /* GlucoseG4.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5B7A4A1D457CCA00796CA9 /* GlucoseG4.swift */; };
 		4F08DE8F1E7BB871006741EA /* CollectionType+Loop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F08DE8E1E7BB871006741EA /* CollectionType+Loop.swift */; };
@@ -595,6 +603,14 @@
 		493BDE2D201A8B57004967E4 /* BluetoothManagerHandler.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = BluetoothManagerHandler.m; sourceTree = "<group>"; };
 		493BDE2E201A8B58004967E4 /* BluetoothManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BluetoothManager.h; sourceTree = "<group>"; };
 		4988FFDB201A98C9007967AC /* NightscoutUploader+Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NightscoutUploader+Profile.swift"; sourceTree = "<group>"; };
+		4988FFDE20274A6E007967AC /* future_low.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = future_low.wav; sourceTree = "<group>"; };
+		4988FFE020274EA8007967AC /* ding1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = ding1.wav; sourceTree = "<group>"; };
+		4988FFE120274EA9007967AC /* ding3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = ding3.wav; sourceTree = "<group>"; };
+		4988FFE220274EA9007967AC /* ding2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = ding2.wav; sourceTree = "<group>"; };
+		4988FFE620274F21007967AC /* beep3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = beep3.wav; sourceTree = "<group>"; };
+		4988FFE720274F21007967AC /* beep2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = beep2.wav; sourceTree = "<group>"; };
+		4988FFE820274F22007967AC /* beep1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = beep1.wav; sourceTree = "<group>"; };
+		4988FFE920274F23007967AC /* error.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = error.wav; sourceTree = "<group>"; };
 		4D3B40021D4A9DFE00BC6334 /* G4ShareSpy.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = G4ShareSpy.framework; path = Carthage/Build/iOS/G4ShareSpy.framework; sourceTree = "<group>"; };
 		4D5B7A4A1D457CCA00796CA9 /* GlucoseG4.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = GlucoseG4.swift; path = Loop/Models/GlucoseG4.swift; sourceTree = SOURCE_ROOT; };
 		4F08DE7C1E7BB6E5006741EA /* ChartAxisValueDoubleLog.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ChartAxisValueDoubleLog.swift; sourceTree = "<group>"; };
@@ -847,6 +863,7 @@
 		43776F8E1B8022E90074EA36 /* Loop */ = {
 			isa = PBXGroup;
 			children = (
+				4988FFDD20274A57007967AC /* Sounds */,
 				493BDE212013676D004967E4 /* FoodCatalog */,
 				7D7076651FE06EE4004AC8EA /* Localizable.strings */,
 				7D7076511FE06EE1004AC8EA /* InfoPlist.strings */,
@@ -1093,6 +1110,21 @@
 				493BDE2A201A8B52004967E4 /* Loop2-Bridging-Header.h */,
 			);
 			path = Bluetooth;
+			sourceTree = "<group>";
+		};
+		4988FFDD20274A57007967AC /* Sounds */ = {
+			isa = PBXGroup;
+			children = (
+				4988FFDE20274A6E007967AC /* future_low.wav */,
+				4988FFE820274F22007967AC /* beep1.wav */,
+				4988FFE720274F21007967AC /* beep2.wav */,
+				4988FFE620274F21007967AC /* beep3.wav */,
+				4988FFE920274F23007967AC /* error.wav */,
+				4988FFE020274EA8007967AC /* ding1.wav */,
+				4988FFE220274EA9007967AC /* ding2.wav */,
+				4988FFE120274EA9007967AC /* ding3.wav */,
+			);
+			path = Sounds;
 			sourceTree = "<group>";
 		};
 		4F70C1DF1DE8DCA7006380B7 /* Loop Status Extension */ = {
@@ -1498,13 +1530,21 @@
 			buildActionMask = 2147483647;
 			files = (
 				493BDE222013676E004967E4 /* FoodCatalog in Resources */,
+				4988FFE420274EAA007967AC /* ding3.wav in Resources */,
+				4988FFDF20274A6E007967AC /* future_low.wav in Resources */,
+				4988FFEB20274F23007967AC /* beep2.wav in Resources */,
+				4988FFEC20274F23007967AC /* beep1.wav in Resources */,
+				4988FFED20274F23007967AC /* error.wav in Resources */,
+				4988FFEA20274F23007967AC /* beep3.wav in Resources */,
 				43FCBBC21E51710B00343C1B /* LaunchScreen.storyboard in Resources */,
 				7D70764F1FE06EE1004AC8EA /* InfoPlist.strings in Resources */,
+				4988FFE320274EAA007967AC /* ding1.wav in Resources */,
 				43776F991B8022E90074EA36 /* Assets.xcassets in Resources */,
 				434F54591D28805E002A9274 /* ButtonTableViewCell.xib in Resources */,
 				7D7076631FE06EE4004AC8EA /* Localizable.strings in Resources */,
 				43776F971B8022E90074EA36 /* Main.storyboard in Resources */,
 				C9886AE51E5B2FAD00473BB8 /* gallery.ckcomplication in Resources */,
+				4988FFE520274EAA007967AC /* ding2.wav in Resources */,
 				4309786C1E73D2F500BEBC82 /* it.lproj in Resources */,
 				434F545B1D2880D4002A9274 /* AuthenticationTableViewCell.xib in Resources */,
 			);
@@ -2071,7 +2111,7 @@
 			baseConfigurationReference = 437D9BA11D7B5203007245E8 /* Loop.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				APP_GROUP_IDENTIFIER = "group.$(MAIN_APP_BUNDLE_IDENTIFIER)Group";
+				APP_GROUP_IDENTIFIER = group.net.loopkit.loop2.LoopGroup;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -2137,7 +2177,7 @@
 			baseConfigurationReference = 437D9BA11D7B5203007245E8 /* Loop.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				APP_GROUP_IDENTIFIER = "group.$(MAIN_APP_BUNDLE_IDENTIFIER)Group";
+				APP_GROUP_IDENTIFIER = group.net.loopkit.loop2.LoopGroup;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
