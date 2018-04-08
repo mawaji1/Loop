@@ -543,9 +543,26 @@ final class LoopDataManager {
 
         // Fetch glucose effects as far back as we want to make retroactive analysis
         var latestGlucoseDate: Date?
+        var momentumInterval: TimeInterval?
         updateGroup.enter()
         glucoseStore.getCachedGlucoseValues(start: Date(timeIntervalSinceNow: -recencyInterval)) { (values) in
             latestGlucoseDate = values.last?.startDate
+            
+            // Find the first value which is within the 15 minute momentumInterval (defined in LoopKit/GlucoseStore)
+            // This is to prevent the momentum do take extreme values if e.g. a BG Meter and CGM value are at the
+            // same time, but vastly different.
+            if let last = latestGlucoseDate {
+                var first = last
+                for value in values {
+                    if value.startDate.timeIntervalSinceNow >= TimeInterval(minutes: -15) {
+                        first = value.startDate
+                        break
+                    }
+                }
+                momentumInterval = last.timeIntervalSince(first)
+                print("momentumInterval", first as Any, last as Any, momentumInterval as Any)
+            }
+            
             updateGroup.leave()
         }
         
@@ -586,16 +603,21 @@ final class LoopDataManager {
         }
 
         if glucoseMomentumEffect == nil {
-            updateGroup.enter()
-            glucoseStore.getRecentMomentumEffect { (effects, error) -> Void in
-                if let error = error, effects.count == 0 {
-                    self.logger.error(error)
-                    self.glucoseMomentumEffect = nil
-                } else {
-                    self.glucoseMomentumEffect = effects
-                }
+            if let momentumInterval = momentumInterval, momentumInterval >= TimeInterval(minutes: 10) {
+                updateGroup.enter()
+                glucoseStore.getRecentMomentumEffect { (effects, error) -> Void in
+                    if let error = error, effects.count == 0 {
+                        self.logger.error(error)
+                        self.glucoseMomentumEffect = nil
+                    } else {
+                        self.glucoseMomentumEffect = effects
+                    }
 
-                updateGroup.leave()
+                    updateGroup.leave()
+                }
+            } else {
+                let error = LoopError.missingDataError(details: "Not enough history for momentum calculation, interval only \(momentumInterval)", recovery: "Wait")
+                self.logger.error(error)
             }
         }
 
