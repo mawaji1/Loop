@@ -186,6 +186,58 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
         return !landscapeMode && statusRowMode.hasRow
     }
     
+    private func updateMealInformation(_ updateGroup: DispatchGroup, _ carbStore: CarbStore?) {
+        print("updateMealInformation")
+        //dispatchPrecondition(condition: .onQueue(dataAccessQueue))
+        if let carbStore = carbStore {
+            let endDate = Date()
+            let mealDate = endDate.addingTimeInterval(TimeInterval(minutes: -45))
+            
+            let undoPossibleDate = endDate.addingTimeInterval(TimeInterval(minutes: -15))
+            updateGroup.enter()
+            carbStore.getCarbEntries(start: mealDate) { (result) in
+                switch(result) {
+                case .success(let values):
+                
+                var mealStart = endDate
+                var mealEnd = mealDate
+                var carbs : Double = 0
+                var allPicks = FoodPicks()
+                for value in values {
+                    print("  updateMealInformation - v - ", value)
+                    mealStart = min(mealStart, value.startDate)
+                    mealEnd = max(value.startDate, mealStart)
+                    let picks = value.foodPicks()
+                    for pick in picks.picks {
+                        allPicks.append(pick)
+                    }
+                    print("  updateMealInformation - p - ", picks)
+                    if let lastpick = picks.last {
+                        mealEnd = max(lastpick.date, mealEnd)
+                    }
+                    carbs = carbs + picks.carbs
+                    
+                }
+                print("  updateMealInformation - carbs - ", carbs)
+                //var undoPossible = false
+                //if let undoPossibleDate = undoPossibleDate {
+                let undoPossible = undoPossibleDate <= mealEnd
+                //}
+                self.mealInformation = (date: endDate, lastCarbEntry: values.last,
+                                        picks: allPicks,
+                                        start: mealStart, end: mealEnd, carbs: carbs, undoPossible: undoPossible)
+                
+                print("updateMealInformation - ", self.mealInformation as Any)
+                case .failure(let error):
+                    print("updateMealInformation - error - ", error as Any)
+                }
+                updateGroup.leave()
+            }
+        }
+        //mealInformationNeedsUpdate = false
+    }
+    
+    
     override func reloadData(animated: Bool = false) {
         guard active && visible && !reloading && !refreshContext.isEmpty && !deviceManager.loopManager.authorizationRequired else {
             return
@@ -240,7 +292,7 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
                 let lastLoopError = state.error
                 let dosingEnabled = manager.settings.dosingEnabled
             
-                self.mealInformation = state.mealInformation
+                //self.mealInformation = state.mealInformation
                 
                 
                 self.pumpDetachedMode = state.pumpDetachedMode
@@ -314,6 +366,8 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
                         reloadGroup.leave()
                     }
                 }
+                
+                self.updateMealInformation(reloadGroup, manager.carbStore)
 
                 reloadGroup.leave()
             }
@@ -1163,6 +1217,8 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
                             // TODO(Erik) This needs to be queued properly
                             self.treatmentDisplayDismissed = true
                             self.treatmentInformation = nil
+                        } else {
+                            performSegue(withIdentifier: BolusViewController.className, sender: indexPath)
                         }
                     } else if pending.carbs > 0 {
                         performSegue(withIdentifier: QuickCarbEntryViewController.className, sender: indexPath)
@@ -1560,16 +1616,20 @@ final class StatusTableViewController: ChartsTableViewController, MealTableViewC
     }
     
     func mealTableViewCellImageTap(_ sender : MealTableViewCell) {
-        if let pick = foodRecentCollectionViewDataSource.foodPicks.picks.last, let mi = self.mealInformation, mi.undoPossible {
+        if let mi = self.mealInformation, let lastCarbEntry = mi.lastCarbEntry, let pick = lastCarbEntry.foodPicks().last,  mi.undoPossible {
+            
             let alert = UIAlertController(title: "Undo Food Selection", message: "Are you sure you want to remove the last food pick \(pick.item.title) of \(pick.displayCarbs) g carbs?", preferredStyle: .alert)
             
             
             alert.addAction(UIAlertAction(title: "Remove", style: .default, handler: { [weak alert] (_) in
                 print("Alert", alert as Any)
-                if let error = self.deviceManager.loopManager.removeLastFoodPick() {
-                    self.presentAlertController(with: error)
+                self.deviceManager.loopManager.removeCarbEntry(carbEntry: lastCarbEntry) { (error) in
+                    if let err = error {
+                        print("removeLastFoodPick Error", err as Any)
+                        self.presentAlertController(with: err)
+                    }
+                    self.reloadData()
                 }
-                self.reloadData()
             }))
             
             alert.addAction(UIAlertAction(title: "Back", style: .cancel, handler: nil))

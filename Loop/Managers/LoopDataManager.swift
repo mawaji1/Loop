@@ -100,7 +100,6 @@ final class LoopDataManager {
             self.dataAccessQueue.async {
                 self.carbEffect = nil
                 self.carbsOnBoard = nil
-                self.mealInformationNeedsUpdate = true
                 self.notify(forChange: .carbs)
             }
         }
@@ -307,7 +306,6 @@ final class LoopDataManager {
 
                     self.carbEffect = nil
                     self.carbsOnBoard = nil
-                    self.mealInformationNeedsUpdate = true
                     defer {
                         self.notify(forChange: .carbs)
                     }
@@ -332,9 +330,7 @@ final class LoopDataManager {
         }
 
         lastCarbChange = Date()
-        if carbUndoPossible == nil {
-            carbUndoPossible = carbEntry.startDate
-        }
+
         if let replacingEntry = replacingEntry {
             carbStore.replaceCarbEntry(replacingEntry, withEntry: carbEntry, resultHandler: addCompletion)
         } else {
@@ -555,8 +551,7 @@ final class LoopDataManager {
                 var first = last
                 for value in values {
                     if value.startDate.timeIntervalSinceNow >= TimeInterval(minutes: -15) {
-                        first = value.startDate
-                        break
+                        first = min(first, value.startDate)
                     }
                 }
                 momentumInterval = last.timeIntervalSince(first)
@@ -566,10 +561,6 @@ final class LoopDataManager {
             updateGroup.leave()
         }
         
-        // Must not depend on valid glucose data.
-        if mealInformationNeedsUpdate || (mealInformation?.date.timeIntervalSinceNow ?? -TimeInterval.infinity < TimeInterval(minutes: -5)) {
-            updateMealInformation(updateGroup, Date())
-        }
         _ = updateGroup.wait(timeout: .distantFuture)
 
         guard let lastGlucoseDate = latestGlucoseDate else {
@@ -1166,7 +1157,7 @@ final class LoopDataManager {
             throw LoopError.pumpDataTooOld(date: pumpStatusDate)
         }
 
-        guard glucoseMomentumEffect != nil, carbEffect != nil, insulinEffect != nil else {
+        guard /*glucoseMomentumEffect != nil, */carbEffect != nil, insulinEffect != nil else {
             self.predictedGlucose = nil
             throw LoopError.missingDataError(details: "Glucose effects", recovery: nil)
         }
@@ -1544,106 +1535,31 @@ final class LoopDataManager {
     
     // FOOD PICKS
     typealias MealInformation = (date: Date, lastCarbEntry: CarbEntry?, picks: FoodPicks?, start: Date?, end: Date?, carbs: Double?, undoPossible: Bool)
-    
-    
-    fileprivate var mealInformation : MealInformation? = nil
-    private var mealInformationNeedsUpdate = true
-    
-    private func updateMealInformation(_ updateGroup: DispatchGroup, _ dataDate: Date) {
-        print("updateMealInformation")
-        dispatchPrecondition(condition: .onQueue(dataAccessQueue))
-        if let carbStore = self.carbStore {
-            let endDate = dataDate
-            let mealDate = endDate.addingTimeInterval(TimeInterval(minutes: -45))
-            
-            let undoPossibleDate = carbUndoPossible
-            updateGroup.enter()
-            carbStore.getCachedCarbEntries(start: mealDate, end: endDate) { (values) in
 
-                    var mealStart = endDate
-                    var mealEnd = mealDate
-                    var carbs : Double = 0
-                    var allPicks = FoodPicks()
-                    for value in values {
-                        print("  updateMealInformation - v - ", value)
-                        mealStart = min(mealStart, value.startDate)
-                        mealEnd = max(value.startDate, mealStart)
-                        let picks = value.foodPicks()
-                        for pick in picks.picks {
-                            allPicks.append(pick)
-                        }
-                        print("  updateMealInformation - p - ", picks)
-                        if let lastpick = picks.last {
-                            mealEnd = max(lastpick.date, mealEnd)
-                        }
-                        carbs = carbs + picks.carbs
-                        
-                    }
-                    print("  updateMealInformation - carbs - ", carbs)
-                    var undoPossible = false
-                    if let undoPossibleDate = undoPossibleDate {
-                        undoPossible = undoPossibleDate <= mealEnd
-                    }
-                    self.mealInformation = (date: endDate, lastCarbEntry: values.last,
-                                            picks: allPicks,
-                                            start: mealStart, end: mealEnd, carbs: carbs, undoPossible: undoPossible)
-
-                print("updateMealInformation - ", self.mealInformation as Any)
-                updateGroup.leave()
-            }
-        }
-        mealInformationNeedsUpdate = false
-    }
-
-    
     private var manualGlucoseEntered = false  // TODO switch to false
-    private var carbUndoPossible : Date? = nil  // no undo after restart
     
-    public func removeLastFoodPick() -> Error? {
-        // TODO(Erik): This should have a completion to present an error (and not use DispatchGroup)
-        print("removeLastFoodPick")
-        let updateGroup = DispatchGroup.init()
-        updateGroup.enter()
-        var ret : Error? = nil
-        dataAccessQueue.async {
-            
-            guard let lastCarbEntry = self.mealInformation?.lastCarbEntry,
-                let undoPossible = self.mealInformation?.undoPossible,
-                let carbStore = self.carbStore,
-                undoPossible
-                else {
-                    self.addDebugNote("removeLastFoodPick - not possible.")
-                    updateGroup.leave()
-                    return
-            }
-            
-            print("removeLastFoodPick - original \(lastCarbEntry)")
-            self.addDebugNote("removeLastFoodPick - original \(lastCarbEntry)")
-            
-            carbStore.deleteCarbEntry(lastCarbEntry) { (success, error) in
-                self.dataAccessQueue.async {
-                    if success {
-                        self.carbEffect = nil
-                        self.carbsOnBoard = nil
-                        self.mealInformationNeedsUpdate = true
-                        defer {
-                            self.notify(forChange: .carbs)
-                        }
-                        DispatchQueue.main.async {
-                                // TODO: CarbStore doesn't automatically post this for deletes
-                                NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self)
-                        }
-                    }
-                    if error != nil {
-                        print("deleteCarbEntry error", error as Any)
-                        ret = error
-                    }
-                    updateGroup.leave()
+    public func removeCarbEntry(carbEntry: CarbEntry, _ completion: @escaping (_ error: Error?) -> Void) {
+
+        self.addDebugNote("removeCarbEntry - original \(carbEntry)")
+        carbStore.deleteCarbEntry(carbEntry) { (success, error) in
+            self.dataAccessQueue.async {
+                self.carbEffect = nil
+                self.carbsOnBoard = nil
+                defer {
+                    self.notify(forChange: .carbs)
                 }
             }
+            DispatchQueue.main.async {
+                // TODO: CarbStore doesn't automatically post this for deletes
+                NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self)
+            }
+            if success {
+                completion(nil)
+            } else if error != nil {
+                print("removeCarbEntry deleteCarbEntry error", error as Any)
+                completion(error)
+            }
         }
-        updateGroup.wait()
-        return ret
     }
     
     // CARB ONLY BOLUS SUGGESTION
@@ -1850,8 +1766,6 @@ protocol LoopState {
     
     var pumpDetachedMode: Date? { get }
     
-    var mealInformation: LoopDataManager.MealInformation? { get }
-    
     var treatmentInformation: TreatmentInformation? { get }
     
     var validGlucose: GlucoseValue? { get }
@@ -1935,11 +1849,6 @@ extension LoopDataManager {
         var pumpDetachedMode: Date? {
             dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
             return loopDataManager.pumpDetachedMode
-        }
-        
-        var mealInformation: MealInformation?  {
-            dispatchPrecondition(condition: .onQueue(loopDataManager.dataAccessQueue))
-            return loopDataManager.mealInformation
         }
         
         var treatmentInformation: TreatmentInformation? {
@@ -2027,7 +1936,6 @@ extension LoopDataManager {
                 "recommendedBolus: \(String(describing: state.recommendedBolus))",
                 "lastRequestedBolus: \(String(describing: state.lastRequestedBolus))",
                 "pumpDetachedMode: \(String(describing: state.pumpDetachedMode))",
-                "mealInformation: \(String(describing: state.mealInformation))",
                 "treatmentInformation: \(String(describing: state.treatmentInformation))",
                 "validGlucose: \(String(describing: state.validGlucose))",
                 "lastGlucoseChange: \(String(describing: manager.lastGlucoseChange))",
