@@ -594,7 +594,7 @@ final class LoopDataManager {
         }
 
         if glucoseMomentumEffect == nil {
-            if let momentumInterval = momentumInterval, momentumInterval >= TimeInterval(minutes: 10) {
+            if let momentumInterval = momentumInterval, momentumInterval >= TimeInterval(minutes: 4) {
                 updateGroup.enter()
                 glucoseStore.getRecentMomentumEffect { (effects, error) -> Void in
                     if let error = error, effects.count == 0 {
