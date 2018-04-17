@@ -19,6 +19,9 @@ struct NotificationManager {
         case pumpBatteryLow
         case pumpReservoirEmpty
         case pumpReservoirLow
+        
+        // PRIVATE
+        case GlucoseLow
     }
 
     enum Action: String {
@@ -28,6 +31,13 @@ struct NotificationManager {
     enum UserInfoKey: String {
         case bolusAmount
         case bolusStartDate
+        
+        // PRIVATE
+        case GlucoseLowRemaining
+        case GlucoseMinTarget
+        case GlucoseLowValue
+        case GlucoseCarbSuggestion
+        case GlucoseLowDate
     }
 
     private static var notificationCategories: Set<UNNotificationCategory> {
@@ -199,6 +209,54 @@ struct NotificationManager {
             trigger: nil
         )
 
+        UNUserNotificationCenter.current().add(request)
+    }
+}
+
+
+// PRIVATE MODIFICATIONS
+
+extension NotificationManager {
+    
+    static func clearGlucoseFutureLowNotifications() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Category.GlucoseLow.rawValue])
+        //UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Category.GlucoseLow.rawValue])
+    }
+    
+    
+    static func sendGlucoseFutureLowNotifications(currentDate: Date, lowDate: Date, target: Double, glucose: Double, carbs: Double) {
+        let notification = UNMutableNotificationContent()
+        let minutes = Int(lowDate.timeIntervalSince(currentDate) / 60)
+        notification.title = NSLocalizedString("Future Glucose Low", comment: "The notification title for a low glucose alarm.")
+        notification.body = String(format: NSLocalizedString("Glucose likely below target of %@ in %@ minutes.  Eat %@ g carbs and record them in Loop. Eventual glucose %@.", comment: "The notification alert describing a possible low glucose event. The substitution parameter is the time remaining."),
+                                   
+                                   NumberFormatter.localizedString(from: NSNumber(value: target), number: .decimal),
+                                   NumberFormatter.localizedString(from: NSNumber(value: minutes), number: .decimal),
+                                   NumberFormatter.localizedString(from: NSNumber(value: carbs), number: .decimal),
+                                   NumberFormatter.localizedString(from: NSNumber(value: glucose), number: .decimal)
+            
+        )
+        notification.sound = UNNotificationSound.default()
+        
+        if lowDate.timeIntervalSinceNow >= TimeInterval(minutes: -5) {
+            notification.categoryIdentifier = Category.GlucoseLow.rawValue
+        }
+        
+        notification.userInfo = [
+            
+            UserInfoKey.GlucoseMinTarget.rawValue: target,
+            UserInfoKey.GlucoseLowValue.rawValue: glucose,
+            UserInfoKey.GlucoseCarbSuggestion.rawValue: carbs,
+            UserInfoKey.GlucoseLowDate.rawValue: lowDate
+        ]
+        
+        let request = UNNotificationRequest(
+            // Only support 1 low notification at once
+            identifier: Category.GlucoseLow.rawValue,
+            content: notification,
+            trigger: nil
+        )
+        
         UNUserNotificationCenter.current().add(request)
     }
 }

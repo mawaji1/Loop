@@ -15,6 +15,7 @@ enum BolusRecommendationNotice {
     case glucoseBelowSuspendThreshold(minGlucose: GlucoseValue)
     case currentGlucoseBelowTarget(glucose: GlucoseValue)
     case predictedGlucoseBelowTarget(minGlucose: GlucoseValue)
+    case carbOnly(carbs: Double)
 }
 
 
@@ -38,7 +39,10 @@ extension BolusRecommendationNotice {
             let glucoseFormatter = NumberFormatter.glucoseFormatter(for: unit)
             let minBGStr = glucoseFormatter.describingGlucose(minGlucose.quantity, for: unit)!
             return String(format: NSLocalizedString("Predicted glucose at %1$@ is %2$@.", comment: "Message when offering bolus recommendation even though bg is below range and minBG is in future. (1: glucose time)(2: glucose number)"), time, minBGStr)
-
+        case .carbOnly(carbs: let carbs):
+            let carbsRounded = round(carbs)
+            return String(format: NSLocalizedString("No glucose, recommendation based on \(carbsRounded) g of carbs since last bolus.", comment: "Notice message when recommending bolus when no glucose is available. (1: carb amount in gram)"))
+            
         }
     }
 }
@@ -51,7 +55,9 @@ extension BolusRecommendationNotice: Equatable {
 
         case (.currentGlucoseBelowTarget, .currentGlucoseBelowTarget):
             return true
-
+        case (let .carbOnly(carbs1), let .carbOnly(carbs2)):
+            return carbs1 == carbs2
+            
         case (let .predictedGlucoseBelowTarget(minGlucose1), let .predictedGlucoseBelowTarget(minGlucose2)):
             // GlucoseValue is not equatable
             return
@@ -67,24 +73,31 @@ extension BolusRecommendationNotice: Equatable {
 
 struct BolusRecommendation {
     let amount: Double
+    let netAmount: Double  // can be negative, e.g. to calculate recommended carbs.
     let pendingInsulin: Double
     var notice: BolusRecommendationNotice?
+    // only in case of negative amount
+    let target : HKQuantity?
+    let minPrediction : GlucoseValue?
 
-    init(amount: Double, pendingInsulin: Double, notice: BolusRecommendationNotice? = nil) {
+    init(amount: Double, pendingInsulin: Double, notice: BolusRecommendationNotice? = nil, netAmount: Double? = nil, target: HKQuantity? = nil, minPrediction: GlucoseValue? = nil) {
         self.amount = amount
+        self.netAmount = netAmount ?? amount
         self.pendingInsulin = pendingInsulin
         self.notice = notice
+        self.target = target
+        self.minPrediction = minPrediction
     }
 }
 
 
 extension BolusRecommendation: Comparable {
     static func ==(lhs: BolusRecommendation, rhs: BolusRecommendation) -> Bool {
-        return lhs.amount == rhs.amount
+        return lhs.amount == rhs.amount && lhs.netAmount == rhs.netAmount
     }
 
     static func <(lhs: BolusRecommendation, rhs: BolusRecommendation) -> Bool {
-        return lhs.amount < rhs.amount
+        return lhs.amount < rhs.amount && lhs.netAmount < rhs.netAmount
     }
 }
 

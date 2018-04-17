@@ -18,6 +18,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     private(set) lazy var deviceManager = DeviceDataManager()
 
+    private(set) lazy var foodManager = FoodManager()
+    
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplicationLaunchOptionsKey: Any]?) -> Bool {
         window?.tintColor = UIColor.tintColor
 
@@ -26,14 +28,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let bundle = Bundle(for: type(of: self))
         DiagnosticLogger.shared = DiagnosticLogger(subsystem: bundle.bundleIdentifier!, version: bundle.shortVersionString)
         DiagnosticLogger.shared?.forCategory("AppDelegate").info(#function)
+        DiagnosticLogger.shared?.loopManager = deviceManager.loopManager
 
         AnalyticsManager.shared.application(application, didFinishLaunchingWithOptions: launchOptions)
-
+        AnalyticsManager.shared.loopManager = deviceManager.loopManager
+        
         if  let navVC = window?.rootViewController as? UINavigationController,
             let statusVC = navVC.viewControllers.first as? StatusTableViewController {
             statusVC.deviceManager = deviceManager
+            statusVC.foodManager = foodManager
         }
 
+        application.setMinimumBackgroundFetchInterval(300.0)
+        
         return true
     }
 
@@ -53,6 +60,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // deviceManager.maybeToggleBluetooth("did-become-active")
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -96,4 +104,23 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.badge, .sound, .alert])
     }
+}
+
+
+// Watchdog for resetting Bluetooth if needed.
+extension AppDelegate {
+    
+    func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        // deviceManager.loopManager.addInternalNote("background-fetch")
+        deviceManager.maybeToggleBluetooth("background-fetch")
+        
+        guard let url = URL(string: "http://www.example.com") else { return }
+        URLSession.shared.dataTask(with: url) { (data, response, err) in
+            guard let data = data else { return }
+            print("Download success.", data)
+            }.resume()
+        
+        completionHandler(UIBackgroundFetchResult.newData)
+    }
+    
 }

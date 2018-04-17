@@ -8,7 +8,49 @@
 
 import InsulinKit
 import MinimedKit
+import NightscoutUploadKit
 
+public enum FakeEventTypes: UInt8 {
+    case note = 0xfe  // Must not exist in MinimedKit.PumpEventType!
+    case siteChange = 0xfd
+    case insulinChange = 0xfc
+    case bgReceived = 0xfb
+    case debug = 0xfa
+}
+
+final class PendingTreatmentsQueueManager: IdentifiableClass {
+    
+    static var shared = PendingTreatmentsQueueManager()
+    
+    public let queue: DispatchQueue = DispatchQueue(label: "com.loopkit.loop.UserDefaults.pendingTreatmentsQueue", qos: .utility)
+    public var pending : [NightscoutTreatment] = []
+    
+    public var generation = String(UUID().uuidString.prefix(4))
+    
+    private let lock = DispatchSemaphore(value: 1)
+    private var value = 0
+    private var failed = 0
+    
+    public func incrementAndGet() -> Int {
+        
+        lock.wait()
+        defer { lock.signal() }
+        value += 1
+        return value
+    }
+    
+    public func recordFailure() {
+        lock.wait()
+        defer { lock.signal() }
+        failed += 1
+    }
+    
+    public func failures() -> Int {
+        lock.wait()
+        defer { lock.signal() }
+        return failed
+    }
+}
 
 // Bridges support for MinimedKit data types
 extension LoopDataManager {
@@ -100,5 +142,113 @@ extension LoopDataManager {
         }
 
         addPumpEvents(events, completion: completion)
+    }
+    
+    // Modifications to handle more logging events from App in Nightscout
+    //
+    private func addFakeEvent(_ eventType: FakeEventTypes, _ note: String) {
+        let date = Date()
+        
+        let author = "loop://\(UIDevice.current.name)"
+        let id = PendingTreatmentsQueueManager.shared.generation
+        let n = PendingTreatmentsQueueManager.shared.incrementAndGet()
+        let fail = PendingTreatmentsQueueManager.shared.failures()
+        let uid = "#\(id):\(n) (\(fail))"
+        
+        var treatment : NightscoutTreatment?
+            switch(eventType) {
+            case .debug:
+                let cal = Calendar.current
+                let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second, .nanosecond], from: date)
+                let microSeconds = lrint(Double(comps.nanosecond!)/1000)
+                // This hack is here to prevent de-duplication of events on insert
+                // in Nightscout.  Everything else is logged much less per second, this might
+                // be logged more than once.
+                let formatted = String(format: "Debug.%06ld", microSeconds)
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "\(note) \(uid)", eventType: formatted)
+            case .note:
+                treatment = NoteNightscoutTreatment(timestamp: date, enteredBy: author, notes: "\(note) \(uid)")
+            case .insulinChange:
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note) \(uid)", eventType: "Insulin Change")
+            case .siteChange:
+                treatment = NightscoutTreatment(timestamp: date, enteredBy: author, notes:  "Automatically added: \(note) \(uid)", eventType: "Site Change")
+            case .bgReceived:
+                let parts = note.split(separator: " ", maxSplits: 1)
+                let amount = Int(parts[0]) ?? 0
+                let comment = String(parts[1])
+                treatment = BGCheckNightscoutTreatment(
+                    timestamp: date,
+                    enteredBy: author,
+                    glucose: amount,
+                    glucoseType: .Meter,
+                    units: .MGDL,
+                    notes: "\(comment) \(uid)"
+                )
+                
+            }
+        guard let finalTreatment = treatment else {
+            return
+        }
+        print("UPLOADING finalTreatment", finalTreatment.dictionaryRepresentation)
+        PendingTreatmentsQueueManager.shared.queue.async {
+            PendingTreatmentsQueueManager.shared.pending.append(finalTreatment)
+            // UserDefaults.standard.pendingTreatments.append(event)
+            self.uploadTreatments()
+        }
+    }
+    
+    private func uploadTreatments() {
+        dispatchPrecondition(condition: .onQueue(PendingTreatmentsQueueManager.shared.queue))
+        let pendingTreatments = PendingTreatmentsQueueManager.shared.pending
+        PendingTreatmentsQueueManager.shared.pending = []
+        print("UPLOADING", pendingTreatments.count)
+        let uploadGroup = DispatchGroup()
+        
+        uploadGroup.enter()
+        let uploadTreatments = pendingTreatments
+        self.delegate.loopDataManager(self, uploadTreatments: uploadTreatments) { (result) in
+            switch(result) {
+            case .success(let ids):
+                for (treatment, id) in zip(uploadTreatments, ids) {
+                    print("UPLOADING SUCCESS", id, treatment.dictionaryRepresentation)
+                }
+            case .failure(let error):
+                for treatment in uploadTreatments {
+                    print("UPLOADING ERROR", error, treatment.dictionaryRepresentation)
+                    PendingTreatmentsQueueManager.shared.pending.append(treatment)
+                    PendingTreatmentsQueueManager.shared.recordFailure()
+                }
+            }
+            uploadGroup.leave()
+        }
+        
+        uploadGroup.wait()
+    }
+    
+    public func addNote(_ text: String) {
+        print("addNote: ", text)
+        addFakeEvent(.note, text)
+    }
+    
+    public func addInternalNote(_ text: String) {
+        print("INTERNAL \(text)")
+        addFakeEvent(.debug, "INTERNAL \(text)")
+    }
+    
+    public func addDebugNote(_ text: String) {
+        print("DEBUG \(text)")
+        addFakeEvent(.debug, "DEBUG \(text)")
+    }
+    
+    public func addInsulinChange(_ text: String) {
+        addFakeEvent(.insulinChange, text)
+    }
+    
+    public func addSiteChange(_ text: String) {
+        addFakeEvent(.siteChange, text)
+    }
+    
+    public func addBGReceived(bloodGlucose: Int, comment: String = "") {
+        addFakeEvent(.bgReceived, "\(bloodGlucose) \(comment)")
     }
 }

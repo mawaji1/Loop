@@ -77,9 +77,13 @@ enum LogglyAPIEndpoint: String {
         return "https://logs-01.loggly.com/\(rawValue)/"
     }
 
-    func url(token: String, tags: [String]) -> URL {
+    func url(token: String, tags: [String]) -> URL? {
         let tags = tags.count > 0 ? tags : ["http"]
-        return URL(string: "\(base)\(token)/tag/\(tags.joined(separator: ","))/")!
+        let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: "\(base)\(cleanToken)/tag/\(tags.joined(separator: ","))/") {
+            return url
+        }
+        return nil
     }
 }
 
@@ -96,7 +100,10 @@ extension URLSession {
     }
 
     private func inputTask(body: Data, contentType: String, token: String, tags: [String]) -> URLSessionUploadTask? {
-        let url = LogglyAPIEndpoint.inputs.url(token: token, tags: tags)
+        guard let url = LogglyAPIEndpoint.inputs.url(token: token, tags: tags) else {
+            return nil
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(contentType, forHTTPHeaderField: "content-type")

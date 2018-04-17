@@ -31,7 +31,7 @@ private extension RefreshContext {
 }
 
 
-final class StatusTableViewController: ChartsTableViewController {
+final class StatusTableViewController: ChartsTableViewController, MealTableViewCellDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -83,10 +83,21 @@ final class StatusTableViewController: ChartsTableViewController {
         // Toolbar
         toolbarItems![0].accessibilityLabel = NSLocalizedString("Add Meal", comment: "The label of the carb entry button")
         toolbarItems![0].tintColor = UIColor.COBTintColor
+       // toolbarItems![0].action = #selector(showQuickCarbEntry(_:))
+        
+        toolbarItems![2] = createNoteButtonItem()
+        
         toolbarItems![4].accessibilityLabel = NSLocalizedString("Bolus", comment: "The label of the bolus entry button")
         toolbarItems![4].tintColor = UIColor.doseTintColor
         toolbarItems![8].accessibilityLabel = NSLocalizedString("Settings", comment: "The label of the settings button")
         toolbarItems![8].tintColor = UIColor.secondaryLabelColor
+        
+        let longTapGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(toggleExpertMode(_:)))
+        longTapGestureRecognizer.minimumPressDuration = 0.3
+        
+        self.navigationController?.toolbar.addGestureRecognizer(longTapGestureRecognizer)
+        
+        toolbarItems![8].isEnabled = expertMode
     }
 
     override func didReceiveMemoryWarning() {
@@ -174,7 +185,59 @@ final class StatusTableViewController: ChartsTableViewController {
     private var shouldShowStatus: Bool {
         return !landscapeMode && statusRowMode.hasRow
     }
-
+    
+    private func updateMealInformation(_ updateGroup: DispatchGroup, _ carbStore: CarbStore?) {
+        print("updateMealInformation")
+        //dispatchPrecondition(condition: .onQueue(dataAccessQueue))
+        if let carbStore = carbStore {
+            let endDate = Date()
+            let mealDate = endDate.addingTimeInterval(TimeInterval(minutes: -45))
+            
+            let undoPossibleDate = endDate.addingTimeInterval(TimeInterval(minutes: -15))
+            updateGroup.enter()
+            carbStore.getCarbEntries(start: mealDate) { (result) in
+                switch(result) {
+                case .success(let values):
+                
+                var mealStart = endDate
+                var mealEnd = mealDate
+                var carbs : Double = 0
+                var allPicks = FoodPicks()
+                for value in values {
+                    print("  updateMealInformation - v - ", value)
+                    mealStart = min(mealStart, value.startDate)
+                    mealEnd = max(value.startDate, mealStart)
+                    let picks = value.foodPicks()
+                    for pick in picks.picks {
+                        allPicks.append(pick)
+                    }
+                    print("  updateMealInformation - p - ", picks)
+                    if let lastpick = picks.last {
+                        mealEnd = max(lastpick.date, mealEnd)
+                    }
+                    carbs = carbs + picks.carbs
+                    
+                }
+                print("  updateMealInformation - carbs - ", carbs)
+                //var undoPossible = false
+                //if let undoPossibleDate = undoPossibleDate {
+                let undoPossible = undoPossibleDate <= mealEnd
+                //}
+                self.mealInformation = (date: endDate, lastCarbEntry: values.last,
+                                        picks: allPicks,
+                                        start: mealStart, end: mealEnd, carbs: carbs, undoPossible: undoPossible)
+                
+                print("updateMealInformation - ", self.mealInformation as Any)
+                case .failure(let error):
+                    print("updateMealInformation - error - ", error as Any)
+                }
+                updateGroup.leave()
+            }
+        }
+        //mealInformationNeedsUpdate = false
+    }
+    
+    
     override func reloadData(animated: Bool = false) {
         guard active && visible && !reloading && !refreshContext.isEmpty && !deviceManager.loopManager.authorizationRequired else {
             return
@@ -189,7 +252,7 @@ final class StatusTableViewController: ChartsTableViewController {
         let availableWidth = (currentContext.newSize ?? self.tableView.bounds.size).width - self.charts.fixedHorizontalMargin
         let totalHours = floor(Double(availableWidth / minimumSegmentWidth))
         let futureHours = ceil((deviceManager.loopManager.insulinModelSettings?.model.effectDuration ?? .hours(4)).hours)
-        let historyHours = max(1, totalHours - futureHours)
+        let historyHours = max(2.5, totalHours - futureHours)
 
         var components = DateComponents()
         components.minute = 0
@@ -228,7 +291,21 @@ final class StatusTableViewController: ChartsTableViewController {
                 let lastLoopCompleted = state.lastLoopCompleted
                 let lastLoopError = state.error
                 let dosingEnabled = manager.settings.dosingEnabled
+            
+                //self.mealInformation = state.mealInformation
+                
+                
+                self.pumpDetachedMode = state.pumpDetachedMode
+                self.treatmentInformation = state.treatmentInformation
 
+                
+                self.validGlucose = state.validGlucose
+                if let _ = self.validGlucose {
+                    self.needManualGlucose = nil
+                } else {
+                    self.needManualGlucose = Date()
+                }
+                
                 // Net basal rate HUD
                 let date = state.lastTempBasal?.startDate ?? Date()
                 if let scheduledBasal = manager.basalRateSchedule?.between(start: date, end: date).first {
@@ -240,6 +317,10 @@ final class StatusTableViewController: ChartsTableViewController {
                 } else {
                     netBasal = nil
                 }
+                
+                // if state.lastRequestedBolus != nil {
+                //     self.bolusState = .enacting
+                // }
 
                 DispatchQueue.main.async {
                     self.hudView?.loopCompletionHUD.lastLoopCompleted = lastLoopCompleted
@@ -248,6 +329,11 @@ final class StatusTableViewController: ChartsTableViewController {
 
                     if let netBasal = netBasal {
                         self.hudView?.basalRateHUD.setNetBasalRate(netBasal.rate, percent: netBasal.percent, at: netBasal.start)
+                    }
+                    if let ti = self.treatmentInformation {
+                        self.toolbarItems![4].isEnabled = ti.allowed
+                    } else {
+                        self.toolbarItems![4].isEnabled = false // fail closed
                     }
                 }
 
@@ -280,6 +366,8 @@ final class StatusTableViewController: ChartsTableViewController {
                         reloadGroup.leave()
                     }
                 }
+                
+                self.updateMealInformation(reloadGroup, manager.carbStore)
 
                 reloadGroup.leave()
             }
@@ -407,8 +495,12 @@ final class StatusTableViewController: ChartsTableViewController {
                 statusRowMode = nil
             case .none:
                 if let (recommendation: tempBasal, date: date) = newRecommendedTempBasal {
-                    // TODO: Don't display this if we're in closed mode and the loop recently completed
-                    statusRowMode = .recommendedTempBasal(tempBasal: tempBasal, at: date, enacting: false)
+                    // TODO(Erik) DDisplay this if we're in closed mode and the loop recently failed
+                    if self.deviceManager.loopManager.settings.dosingEnabled {
+                        statusRowMode = .hidden
+                    } else {
+                        statusRowMode = .recommendedTempBasal(tempBasal: tempBasal, at: date, enacting: false)
+                    }
                 } else {
                     statusRowMode = .hidden
                 }
@@ -438,10 +530,14 @@ final class StatusTableViewController: ChartsTableViewController {
 
     private enum Section: Int {
         case hud = 0
-        case status
+        case status   // Bolus or TempBasalRecommendation
+        case detached  // DetachedMode reminder
+        case treatment  // Advanced Treatment and ongoing Bolus Information
+        case glucose // Glucose not available reminder
+        case meal   // Meal Information
         case charts
 
-        static let count = 3
+        static let count = 7
     }
 
     // MARK: - Chart Section Data
@@ -488,6 +584,9 @@ final class StatusTableViewController: ChartsTableViewController {
             switch self {
             case .hidden:
                 return false
+            case .enactingBolus:
+                // Managed by different row in this version.
+                return false
             default:
                 return true
             }
@@ -495,15 +594,56 @@ final class StatusTableViewController: ChartsTableViewController {
     }
 
     private var statusRowMode = StatusRowMode.hidden
+    
+    private var shouldShowPumpDetached : Bool {
+        return !landscapeMode && (displayPumpDetachedMode != nil)
+    }
 
+    private var shouldShowTreatmentInformation: Bool {
+        // TODO(Erik) Take dismissed information into account (but needs to be updated by the HUD function below
+        if landscapeMode {
+            return false
+        }
+        if let ti = displayTreatmentInformation {
+            return ti.state != .none
+        }
+        return false
+    }
+    
+    private var shouldShowNeedManualGlucose: Bool {
+        return !landscapeMode && (displayNeedManualGlucose != nil)
+    }
+    
+    private var shouldShowMeal: Bool {
+        return !landscapeMode
+    }
+    
     private func updateHUDandStatusRows(statusRowMode: StatusRowMode?, newSize: CGSize?, animated: Bool) {
         let hudWasVisible = self.shouldShowHUD
         let statusWasVisible = self.shouldShowStatus
+        let treatmentWasVisible = self.shouldShowTreatmentInformation
+        let glucoseWasVisible = self.shouldShowNeedManualGlucose
+        let detachedWasVisible = self.shouldShowPumpDetached
+        let mealWasVisible = self.shouldShowMeal
 
         let oldStatusRowMode = self.statusRowMode
         if let statusRowMode = statusRowMode {
             self.statusRowMode = statusRowMode
         }
+        
+        
+        let oldTreatmentInformation = self.displayTreatmentInformation
+        let newTreatmentInformation = self.treatmentInformation
+        self.displayTreatmentInformation = newTreatmentInformation
+        
+        let oldNeedManualGlucose = self.displayNeedManualGlucose
+        let newNeedManualGlucose = self.needManualGlucose
+        self.displayNeedManualGlucose = newNeedManualGlucose
+        
+        let oldPumpDetachedMode = self.displayPumpDetachedMode
+        let newPumpDetachedMode = self.pumpDetachedMode
+        self.displayPumpDetachedMode = newPumpDetachedMode
+        
 
         if let newSize = newSize {
             self.landscapeMode = newSize.width > newSize.height
@@ -511,7 +651,11 @@ final class StatusTableViewController: ChartsTableViewController {
 
         let hudIsVisible = self.shouldShowHUD
         let statusIsVisible = self.shouldShowStatus
-
+        let treatmentIsVisible = self.shouldShowTreatmentInformation
+        let glucoseIsVisible = self.shouldShowNeedManualGlucose
+        let detachedIsVisible = self.shouldShowPumpDetached
+        let mealIsVisible = self.shouldShowMeal
+        
         tableView.beginUpdates()
 
         switch (hudWasVisible, hudIsVisible) {
@@ -561,6 +705,69 @@ final class StatusTableViewController: ChartsTableViewController {
             break
         }
 
+        let treatmentIndexPath = IndexPath(row: 0, section: Section.treatment.rawValue)
+        switch (treatmentWasVisible, treatmentIsVisible) {
+        case (true, true):
+            if let old = oldTreatmentInformation, let new = newTreatmentInformation,
+                !old.equal(new) {
+                self.tableView.reloadRows(at: [treatmentIndexPath], with: animated ? .top : .none)
+            }
+            if oldTreatmentInformation == nil, newTreatmentInformation != nil {
+                self.tableView.reloadRows(at: [treatmentIndexPath], with: animated ? .top : .none)
+            }
+            if oldTreatmentInformation != nil, newTreatmentInformation == nil {
+                self.tableView.reloadRows(at: [treatmentIndexPath], with: animated ? .top : .none)
+            }
+        case (false, true):
+            self.tableView.insertRows(at: [treatmentIndexPath], with: animated ? .top : .none)
+        case (true, false):
+            self.tableView.deleteRows(at: [treatmentIndexPath], with: animated ? .top : .none)
+        default:
+            break
+        }
+        
+        let detachedIndexPath = IndexPath(row: 0, section: Section.detached.rawValue)
+        switch (detachedWasVisible, detachedIsVisible) {
+        case (true, true):
+            if oldPumpDetachedMode != newPumpDetachedMode {
+                self.tableView.reloadRows(at: [detachedIndexPath], with: animated ? .top : .none)
+            }
+        case (false, true):
+            self.tableView.insertRows(at: [detachedIndexPath], with: animated ? .top : .none)
+        case (true, false):
+            self.tableView.deleteRows(at: [detachedIndexPath], with: animated ? .top : .none)
+        default:
+            break
+        }
+        
+        let glucoseIndexPath = IndexPath(row: 0, section: Section.glucose.rawValue)
+        switch (glucoseWasVisible, glucoseIsVisible) {
+        case (true, true):
+            if oldNeedManualGlucose != newNeedManualGlucose {
+                self.tableView.reloadRows(at: [glucoseIndexPath], with: animated ? .top : .none)
+            }
+        case (false, true):
+            self.tableView.insertRows(at: [glucoseIndexPath], with: animated ? .top : .none)
+        case (true, false):
+            self.tableView.deleteRows(at: [glucoseIndexPath], with: animated ? .top : .none)
+        default:
+            break
+        }
+        
+        let mealIndexPath = IndexPath(row: 0, section: Section.meal.rawValue)
+        switch (mealWasVisible, mealIsVisible) {
+        case (true, true):
+            // TODO(Erik) Make dependent on mealInformation changing.
+            self.tableView.reloadRows(at: [mealIndexPath], with: .none)
+        case (false, true):
+            self.tableView.insertRows(at: [mealIndexPath], with: animated ? .top : .none)
+        case (true, false):
+            self.tableView.deleteRows(at: [mealIndexPath], with: animated ? .top : .none)
+        default:
+            break
+        }
+        
+        
         tableView.endUpdates()
     }
 
@@ -572,11 +779,11 @@ final class StatusTableViewController: ChartsTableViewController {
                 return
             }
 
-            if let preMealMode = preMealMode {
-                toolbarItems![2] = createPreMealButtonItem(selected: preMealMode)
-            } else {
-                toolbarItems![2].isEnabled = false
-            }
+//            if let preMealMode = preMealMode {
+//                toolbarItems![2] = createPreMealButtonItem(selected: preMealMode)
+//            } else {
+//                toolbarItems![2].isEnabled = false
+//            }
         }
     }
 
@@ -608,6 +815,14 @@ final class StatusTableViewController: ChartsTableViewController {
             return ChartRow.count
         case .status:
             return shouldShowStatus ? StatusRow.count : 0
+        case .detached:
+            return shouldShowPumpDetached ? 1 : 0
+        case .treatment:
+            return shouldShowTreatmentInformation ? 1 : 0
+        case .meal:
+            return shouldShowMeal ? 1 : 0
+        case .glucose:
+            return shouldShowNeedManualGlucose ? 1 : 0
         }
     }
 
@@ -691,7 +906,170 @@ final class StatusTableViewController: ChartsTableViewController {
             }
 
             return cell
+            
+        case .treatment:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "BolusTableViewCell", for: indexPath) as! TitleSubtitleTableViewCell
+            if let pending = self.treatmentInformation {
+                let description = pending.description()
+                let kind = pending.kind()
+                cell.titleLabel?.text = "\(description) \(kind)"
+                if pending.carbs > 0 {
+                    cell.subtitleLabel?.text = String(format: NSLocalizedString("%1$@ g @ %2$@", comment: "The format for current carbs and time. (1: localized unit number)(2: localized time)"), NumberFormatter.localizedString(from: NSNumber(value: pending.carbs), number: .decimal), timeFormatter.string(from: pending.date))
+                } else {
+                    cell.subtitleLabel?.text = String(format: NSLocalizedString("%1$@ U @ %2$@", comment: "The format for current bolus and time. (1: localized unit number)(2: localized time)"), NumberFormatter.localizedString(from: NSNumber(value: pending.units), number: .decimal), timeFormatter.string(from: pending.date))
+                }
+                var color : UIColor = UIColor.black
+                let spinWheel = pending.inProgress()
+                
+                var readPump = false
+                switch(pending.state) {
+                case .sent:
+                    color = UIColor.orange
+                    readPump = true
+                case .maybefailed:
+                    color = UIColor.orange
+                    readPump = true
+                case .failed:
+                    color = UIColor.red
+                case .timeout:
+                    color = UIColor.red
+                case .pending:
+                    readPump = true
+                default: _ = true
+                }
+                if readPump {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+                        self.deviceManager.triggerPumpDataRead()
+                    }
+                }
+                if cell.explanationLabel != nil {
+                    cell.explanationLabel?.text = pending.explanation(bolusEnabled: deviceManager.loopManager.settings.bolusEnabled)
+                }
+                cell.titleLabel?.textColor = color
+                cell.subtitleLabel?.textColor = color
+                
+                if spinWheel {
+                    let indicatorView = UIActivityIndicatorView(activityIndicatorStyle: .gray)
+                    indicatorView.startAnimating()
+                    cell.accessoryView = indicatorView
+                } else {
+                    cell.accessoryView = nil
+                }
+            } else {
+                cell.titleLabel?.text = "Bolus?"
+                cell.subtitleLabel?.text = "- nil -"
+                cell.accessoryView = nil
+                
+            }
+            cell.selectionStyle = .default
+            
+            return cell
+        case .meal:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "MealTableViewCell", for: indexPath) as! MealTableViewCell
+            //let dataSource = FoodRecentCollectionViewDataSource()
+            
+            var foodPicks = FoodPicks()
+            
+            var undoPossible = false
+            if let mi = self.mealInformation, let mealEnd = mi.end, mealEnd.timeIntervalSinceNow > TimeInterval(minutes: -30) {
+                let intcarbs = Int(mi.carbs ?? 0)
+                cell.currentCarbLabel.text = "\(intcarbs) g"
+                if let fp = mi.picks {
+                    foodPicks = fp
+                }
+//                if let estimator = mi.estimator {
+//                    let td = timeFormatter.string(from: estimator.start)
+//                    let ti = Int(estimator.absorbed)
+//                    let tr = Int(estimator.rate)
+//
+//                    cell.debugLabelTop.text = "@\(td)"
+//                    cell.debugLabelBottom.text = "\(ti) g, \(tr) g/h"
+//                } else {
+                    cell.debugLabelTop.text = ""
+                    cell.debugLabelBottom.text = ""
+                    
+//                }
+                if let start = mi.start, let end = mi.end {
+                    let t1 = timeFormatter.string(from: start)
+                    let t2 = timeFormatter.string(from: end)
+                    if start > end {
+                        // meal not started, show nothing.
+                        cell.currentCarbDate.text = "(tap to eat)"
+                    } else if t1 == t2 {
+                        cell.currentCarbDate.text = "\(t1)"
+                    } else {
+                        cell.currentCarbDate.text = "\(t1) - \(t2)"
+                    }
+                } else {
+                    
+                    cell.currentCarbDate.text = "(tap to eat)"
+                    
+                }
+                undoPossible = mi.undoPossible
+            } else {
+                cell.currentCarbLabel.text = ""
+                cell.currentCarbDate.text = ""
+                cell.debugLabelTop.text = ""
+                cell.debugLabelBottom.text = ""
+                cell.currentCarbLabel.text = "0 g"
+                cell.currentCarbDate.text = "(tap to eat)"
+            }
+            
+            if undoPossible, mealInformation?.lastCarbEntry != nil {
+                cell.undoLabel.text = "Undo"
+                cell.undoLabel.backgroundColor = UIColor.orange
+            } else {
+                cell.undoLabel.text = ""
+                cell.undoLabel.backgroundColor = UIColor.white
+                /*
+                 if picks.count == 0 {
+                 cell.undoLabel.text = "Start\nMeal"
+                 } else {
+                 cell.undoLabel.text = "Add\nmore"
+                 }
+                 */
+            }
+            //cell.undoLabel.frame = cell.lastItemView.frame
+            cell.leftImageView.tintColor = UIColor.COBTintColor
+            cell.leftImageView.image = UIImage(named: "fork")?.withRenderingMode(.alwaysTemplate)
+            // cell.leftImageView.image?.renderingMode = .alwaysTemplate
+            //cell.leftButton.tintColor = UIColor.COBTintColor
+            //cell.leftButton.render
+            //cell.recentFoodCollectionView.collectionViewLayout = FoodRecentPickerFlowLayout()
+            cell.delegate = self
+            if cell.recentFoodCollectionView.dataSource == nil {
+                cell.recentFoodCollectionView.dataSource = foodRecentCollectionViewDataSource //as UICollectionViewDataSource
+            }
+            foodRecentCollectionViewDataSource.foodManager = foodManager
+            foodRecentCollectionViewDataSource.foodPicks = foodPicks
+            cell.recentFoodCollectionView.reloadData()
+            cell.recentFoodCollectionView.collectionViewLayout.invalidateLayout()
+            return cell
+        case .detached:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "DisconnectTableViewCell", for: indexPath) as! TitleSubtitleTableViewCell
+            if let detached = self.pumpDetachedMode {
+                let color = UIColor.red
+                cell.subtitleLabel?.text = "until " + timeFormatter.string(from: detached)
+                cell.explanationLabel?.textColor = color
+                cell.titleLabel?.textColor = color
+                cell.subtitleLabel?.textColor = color
+                cell.accessoryView = nil
+            }
+            cell.selectionStyle = .default
+            
+            return cell
+        case .glucose:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "GlucoseTableViewCell", for: indexPath) as! TitleSubtitleTableViewCell
+            if let glucoseDate = displayNeedManualGlucose {
+                cell.subtitleLabel?.text = timeFormatter.string(from: glucoseDate)
+            }
+            cell.accessoryView = nil
+            
+            cell.selectionStyle = .default
+            
+            return cell
         }
+        
     }
 
     private func tableView(_ tableView: UITableView, updateSubtitleFor cell: ChartTableViewCell, at indexPath: IndexPath) {
@@ -729,6 +1107,14 @@ final class StatusTableViewController: ChartsTableViewController {
             }
         case .hud, .status:
             break
+        case .detached:
+            break
+        case .treatment:
+            break
+        case .glucose:
+            break
+        case .meal:
+            break
         }
     }
 
@@ -757,19 +1143,37 @@ final class StatusTableViewController: ChartsTableViewController {
             }
         case .hud, .status:
             return UITableViewAutomaticDimension
+        case .treatment:
+            return 70 // UITableViewAutomaticDimension
+        case .meal:
+            return 120  //UITableViewAutomaticDimension
+            /*
+             if let mi = self.mealInformation, let lastEntry = mi.lastCarbEntry, lastEntry.foodPicks().picks.count > 0 {
+             
+             return 120
+             } else {
+             return 70
+             }
+             */
+        case .detached:
+            return 70 // UITableViewAutomaticDimension
+        case .glucose:
+            return 70 // UITableViewAutomaticDimension
         }
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         switch Section(rawValue: indexPath.section)! {
         case .charts:
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
-            case .iob, .dose:
-                performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: indexPath)
-            case .cob:
-                performSegue(withIdentifier: CarbAbsorptionViewController.className, sender: indexPath)
+            if expertMode {
+                switch ChartRow(rawValue: indexPath.row)! {
+                case .glucose:
+                    performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
+                case .iob, .dose:
+                    performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: indexPath)
+                case .cob:
+                    performSegue(withIdentifier: CarbAbsorptionViewController.className, sender: indexPath)
+                }
             }
         case .status:
             switch StatusRow(rawValue: indexPath.row)! {
@@ -796,6 +1200,64 @@ final class StatusTableViewController: ChartsTableViewController {
             }
         case .hud:
             break
+        case .treatment:
+            tableView.deselectRow(at: indexPath, animated: true)
+            
+            // clear bolus if in last/failed state
+            if let pending = self.treatmentInformation {
+                switch(pending.state) {
+                case .recommended:
+                    if pending.units > 0 {
+                        if !deviceManager.loopManager.settings.bolusEnabled {
+                            deviceManager.enactBolus(units: pending.units ) { (_) in
+                                DispatchQueue.main.async {
+                                    self.bolusState = nil
+                                }
+                            }
+                            // TODO(Erik) This needs to be queued properly
+                            self.treatmentDisplayDismissed = true
+                            self.treatmentInformation = nil
+                        } else {
+                            performSegue(withIdentifier: BolusViewController.className, sender: indexPath)
+                        }
+                    } else if pending.carbs > 0 {
+                        performSegue(withIdentifier: QuickCarbEntryViewController.className, sender: indexPath)
+                        //performSegue(withIdentifier: "CarbEntryEditViewController", sender: indexPath)
+                    }
+                case .failed:
+                    self.treatmentDisplayDismissed = true
+                    self.treatmentInformation = nil
+                    performSegue(withIdentifier: BolusViewController.className, sender: indexPath)
+                case .timeout:
+                    self.treatmentDisplayDismissed = true
+                    self.treatmentInformation = nil
+                    performSegue(withIdentifier: BolusViewController.className, sender: indexPath)
+                case .success:
+                    self.treatmentDisplayDismissed = true
+                    self.treatmentInformation = nil
+                default:
+                    _ = true
+                }
+            }
+            
+            DispatchQueue.main.async {
+                //self.needsRefresh = true
+                self.reloadData()
+            }
+            break
+        case .meal:
+            tableView.deselectRow(at: indexPath, animated: true)
+        case .detached:
+            tableView.deselectRow(at: indexPath, animated: true)
+            deviceManager.loopManager.disablePumpDetachedMode()
+            // TODO this should use a callback
+            DispatchQueue.main.async {
+                //self.needsRefresh = true
+                self.reloadData()
+            }
+        case .glucose:
+            tableView.deselectRow(at: indexPath, animated: true)
+            performSegue(withIdentifier: "QuickCarbEntryViewController", sender: indexPath)
         }
     }
 
@@ -826,12 +1288,22 @@ final class StatusTableViewController: ChartsTableViewController {
         case let vc as BolusViewController:
             vc.configureWithLoopManager(self.deviceManager.loopManager,
                 recommendation: sender as? BolusRecommendation,
-                glucoseUnit: self.charts.glucoseUnit
+                glucoseUnit: self.charts.glucoseUnit,
+                expertMode: self.expertMode
             )
         case let vc as PredictionTableViewController:
             vc.deviceManager = deviceManager
         case let vc as SettingsTableViewController:
             vc.dataManager = deviceManager
+        case let vc as NewFoodPickerViewController:
+            foodManager?.updatePopular()
+            vc.foodManager = foodManager
+        case let vc as QuickCarbEntryViewController:
+            vc.carbStore = deviceManager.loopManager.carbStore
+            vc.mealInformation = self.mealInformation
+            vc.preferredGlucoseUnit = self.charts.glucoseUnit
+            vc.shouldShowGlucose = self.validGlucose == nil
+            vc.automatedBolusEnabled = deviceManager.loopManager.settings.bolusEnabled
         default:
             break
         }
@@ -844,14 +1316,25 @@ final class StatusTableViewController: ChartsTableViewController {
         guard let carbVC = segue.source as? CarbEntryEditViewController, let updatedEntry = carbVC.updatedCarbEntry else {
             return
         }
-
+        updateCarbEntry(updatedEntry: updatedEntry)
+    }
+    
+    func updateCarbEntry(updatedEntry: CarbEntry) {
         deviceManager.loopManager.addCarbEntryAndRecommendBolus(updatedEntry) { (result) -> Void in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let recommendation):
                     if self.active && self.visible, let bolus = recommendation?.amount, bolus > 0 {
-                        self.bolusState = .recommended
-                        self.performSegue(withIdentifier: BolusViewController.className, sender: recommendation)
+                        if self.bolusState == nil {
+                            self.bolusState = .recommended
+                        }
+                        if !self.deviceManager.loopManager.settings.bolusEnabled {
+                            // TOOD(Erik): With no glucose but pump information we should still propose
+                            //             a bolus based on the amount of carbs.
+                            if let ti = self.treatmentInformation, ti.allowed {
+                                self.performSegue(withIdentifier: BolusViewController.className, sender: recommendation)
+                            }
+                        }
                     }
                 case .failure(let error):
                     // Ignore bolus wizard errors
@@ -867,6 +1350,13 @@ final class StatusTableViewController: ChartsTableViewController {
 
     @IBAction func unwindFromBolusViewController(_ segue: UIStoryboardSegue) {
         if let bolusViewController = segue.source as? BolusViewController {
+            guard let ti = treatmentInformation, ti.allowed else {
+                
+                //self.presentAlertController(
+                self.bolusState = nil
+                return
+            }
+                
             if let bolus = bolusViewController.bolus, bolus > 0 {
                 self.bolusState = .enacting
                 deviceManager.enactBolus(units: bolus) { (_) in
@@ -927,8 +1417,14 @@ final class StatusTableViewController: ChartsTableViewController {
         if workoutMode == true {
             deviceManager.loopManager.settings.glucoseTargetRangeSchedule?.clearOverride(matching: .workout)
         } else {
-            let vc = UIAlertController(workoutDurationSelectionHandler: { (endDate) in
-                _ = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule?.setOverride(.workout, until: endDate)
+            let vc = UIAlertController(workoutDurationSelectionHandler: { (endDate, disconnect) in
+                if disconnect {
+                    self.deviceManager.loopManager.enablePumpDetachedMode()
+                } else {
+                    _ = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule?.setOverride(.workout, until: endDate)
+                    self.workoutMode = true
+                }
+                
             })
 
             present(vc, animated: true, completion: nil)
@@ -982,4 +1478,196 @@ final class StatusTableViewController: ChartsTableViewController {
             UIApplication.shared.open(url)
         }
     }
+    
+    // MODIFICATIONS
+    
+    // CARB / BOLUS NOTIFICATION
+    private var treatmentInformation: TreatmentInformation?
+    private var treatmentDisplayDismissed = false
+    // what the data view currently displays
+    private var displayTreatmentInformation: TreatmentInformation?
+
+    // MANUAL GLUCOSE ENTRY
+    private var validGlucose : GlucoseValue? = nil
+    private var needManualGlucose : Date? = nil
+    private var displayNeedManualGlucose : Date? = nil
+    
+    // DETACHED MODE
+    private var pumpDetachedMode : Date?
+    private var displayPumpDetachedMode : Date?
+
+    // EXPERT MODE
+    private var expertMode : Bool = false
+    private var settingsTouchTime : Date? = nil
+    @objc func toggleExpertMode(_ sender: UILongPressGestureRecognizer) {
+        guard let toolbar = navigationController?.toolbar else {
+            return
+        }
+        let location = sender.location(in: toolbar)
+        let width = toolbar.frame.width
+        
+        print("toggleExpertMode", expertMode, sender, location.x, width)
+        if location.x > width/5 {
+            if sender.state == .began {
+                settingsTouchTime = Date()
+            }
+            if sender.state == .ended, let duration = settingsTouchTime?.timeIntervalSinceNow  {
+                print("Touch Duration", duration)
+                if abs(duration) > TimeInterval(2) {
+                    print("Longpress")
+                    expertMode = !expertMode
+                    toolbarItems![8].isEnabled = expertMode
+                    if expertMode {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + TimeInterval(minutes: 30)) {
+                            self.expertMode = false
+                            self.toolbarItems![8].isEnabled = self.expertMode
+                        }
+                    }
+                } else {
+                    if !expertMode {
+                        presentAlertController(withTitle: "Hint", message: "Press for 2 seconds to toggle expert mode.")
+                    } else {
+                        // performSegue(withIdentifier: SettingsTableViewController.className, sender: nil)
+                    }
+                }
+            }
+        }
+    }
+    
+    // Notes
+    @IBAction func unwindFromNoteTableViewController(_ segue: UIStoryboardSegue) {
+        if let controller = segue.source as? NoteTableViewController, controller.saved {
+            let note = controller.text
+            deviceManager.loopManager.addNote(note)
+        }
+    }
+    
+    // QuickCarbEntry
+    @IBAction func unwindFromQuickCarbEntry(_ segue: UIStoryboardSegue) {
+        if let carbVC = segue.source as? QuickCarbEntryViewController, carbVC.saved {
+            var foodPick : FoodPick?
+            if let carbVCcarbs = carbVC.carbs {
+                let carbs = carbVCcarbs.quantity.doubleValue(for: HKUnit.gram())
+                let title = "QuickCarbEntry \(carbVC.noteEntered)"
+                let foodItem = FoodItem(carbRatio: 1.0, portionSize: carbs, absorption: .normal, title: title)
+                foodPick = FoodPick(item: foodItem, ratio: 1, date: carbVCcarbs.startDate)
+            }
+            handleFoodPick(foodPick, carbVC.glucose)
+        }
+    }
+    
+    private func handleFoodPick(_ foodPick : FoodPick?, _ updatedGlucose : HKQuantity?) {
+        if let carbEntry = foodPick?.carbEntry {
+            
+            updateCarbEntry(updatedEntry: carbEntry)
+        }
+        
+        if let glucoseStore = deviceManager.loopManager.glucoseStore {
+            if let glucoseEntry = updatedGlucose {
+                glucoseStore.addGlucose(glucoseEntry, date: Date(), isDisplayOnly: false, device: nil) { (success, _, error) in
+                    
+                    if error != nil {
+                        print("addGlucose error", error as Any)
+                    }
+                }
+                let g = Int(glucoseEntry.doubleValue(for: HKUnit.milligramsPerDeciliter()))
+                print("Adding glucose to Nightscout", g)
+                deviceManager.loopManager.addBGReceived(bloodGlucose: g, comment: "Manually Entered")
+            } else {
+                // no glucose entry given
+            }
+        }
+    }
+    
+    @IBAction func unwindFromNewFoodPickerViewController(_ segue: UIStoryboardSegue) {
+        if let controller = segue.source as? NewFoodPickerViewController, let pick = controller.foodPick {
+            //print(pick)
+            
+            //let note = pick.description
+            handleFoodPick(pick, nil)
+            print("unwindFromFoodCollectionViewController", pick, pick.description)
+            
+//            deviceManager.loopManager.addCarbEntryAndRecommendBolus(pick, nil, note) { (_, error) -> Void in
+//                DispatchQueue.main.async {
+//                    if let error = error {
+//                        print("unwindFromFoodCollectionViewController addCarbEntryAndRecommendBolus error", error)
+//                        self.dataManager.logger.addError(error, fromSource: "unwindFromFoodCollectionViewController")
+//                    }
+//                   // self.needsRefresh = true
+//                    self.reloadData()
+//                }
+//            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // self.needsRefresh = true
+                self.reloadData()
+            }
+        }
+    }
+    
+    private var foodRecentCollectionViewDataSource = FoodRecentCollectionViewDataSource()
+    private var displayMeal : Bool = true
+    weak var foodManager: FoodManager!
+    private var mealInformation : LoopDataManager.MealInformation?
+    
+    func mealTableViewCellTap(_ sender : MealTableViewCell) {
+        //        performSegue(withIdentifier: FoodPickerViewController.className, sender: sender)
+        performSegue(withIdentifier: NewFoodPickerViewController.className, sender: sender)
+    }
+    
+    func mealTableViewCellImageTap(_ sender : MealTableViewCell) {
+        if let mi = self.mealInformation, let lastCarbEntry = mi.lastCarbEntry, let pick = lastCarbEntry.foodPicks().last,  mi.undoPossible {
+            
+            let alert = UIAlertController(title: "Undo Food Selection", message: "Are you sure you want to remove the last food pick \(pick.item.title) of \(pick.displayCarbs) g carbs?", preferredStyle: .alert)
+            
+            
+            alert.addAction(UIAlertAction(title: "Remove", style: .default, handler: { [weak alert] (_) in
+                print("Alert", alert as Any)
+                self.deviceManager.loopManager.removeCarbEntry(carbEntry: lastCarbEntry) { (error) in
+                    if let err = error {
+                        print("removeLastFoodPick Error", err as Any)
+                        self.presentAlertController(with: err)
+                    }
+                    self.reloadData()
+                }
+            }))
+            
+            alert.addAction(UIAlertAction(title: "Back", style: .cancel, handler: nil))
+            self.present(alert, animated: true, completion: nil)
+            
+        } else {
+            //            performSegue(withIdentifier: FoodPickerViewController.className, sender: sender)
+            performSegue(withIdentifier: NewFoodPickerViewController.className, sender: sender)
+            
+        }
+    }
+    
+    private lazy var timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        
+        return formatter
+    }()
+
+    @objc func showNote(_ sender: UIBarButtonItem) {
+        performSegue(withIdentifier: NoteTableViewController.className, sender: sender)
+    }
+    
+    @objc func showQuickCarbEntry(_ sender: UIBarButtonItem) {
+        performSegue(withIdentifier: QuickCarbEntryViewController.className, sender: sender)
+    }
+    
+    private func createNoteButtonItem() -> UIBarButtonItem {
+        let originalImage = #imageLiteral(resourceName: "pencil")
+        let scaledIcon = UIImage(cgImage: originalImage.cgImage!, scale: 8, orientation: originalImage.imageOrientation)
+
+        let item = UIBarButtonItem(image: scaledIcon, style: .plain, target: self, action: #selector(showNote(_:)))
+        item.accessibilityLabel = NSLocalizedString("Note Taking", comment: "The label of the note taking button")
+        
+        item.tintColor = UIColor(red: 249.0/255, green: 229.0/255, blue: 0.0/255, alpha: 1.0)
+        
+        return item
+    }
+    
 }

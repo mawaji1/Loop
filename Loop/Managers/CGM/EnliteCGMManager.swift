@@ -10,7 +10,6 @@ import HealthKit
 import LoopUI
 import MinimedKit
 
-
 final class EnliteCGMManager: CGMManager {
     let providesBLEHeartbeat = false
 

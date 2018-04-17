@@ -489,7 +489,8 @@ final class CarbAbsorptionViewController: ChartsTableViewController, Identifiabl
         case let vc as BolusViewController:
             vc.configureWithLoopManager(self.deviceManager.loopManager,
                 recommendation: sender as? BolusRecommendation,
-                glucoseUnit: self.charts.glucoseUnit
+                glucoseUnit: self.charts.glucoseUnit,
+                expertMode: true
             )
         case let vc as CarbEntryEditViewController:
             if let selectedCell = sender as? UITableViewCell, let indexPath = tableView.indexPath(for: selectedCell), indexPath.row < carbStatuses.count {

@@ -63,17 +63,34 @@ extension NightscoutUploader {
         var objectIDs = [NSManagedObjectID]()
         var timestampedPumpEvents = [TimestampedHistoryEvent]()
 
+        var fakeEvents = [NightscoutTreatment]()
+        let author = "loop://\(UIDevice.current.name)"
+        
         for event in events {
             objectIDs.append(event.objectID)
 
             if let raw = event.raw, raw.count > 0, let type = MinimedKit.PumpEventType(rawValue: raw[0])?.eventType, let pumpEvent = type.init(availableData: raw, pumpModel: pumpModel) {
                 timestampedPumpEvents.append(TimestampedHistoryEvent(pumpEvent: pumpEvent, date: event.date))
+                
+                // Handle Events not handled in NightscoutPumpEvents
+                switch pumpEvent {
+                case let rewind as RewindPumpEvent:
+                    _ = rewind
+                    let entry = NightscoutTreatment(timestamp: event.date, enteredBy: author, notes:  "Automatically added", eventType: "Insulin Change")
+                    fakeEvents.append(entry)
+                case let prime as PrimePumpEvent:
+                    let amount = prime.dictionaryRepresentation["amount"]
+                    let entry = NightscoutTreatment(timestamp: event.date, enteredBy: author, notes:  "Automatically added; Amount \(amount ?? 0) Units", eventType: "Site Change")
+                    fakeEvents.append(entry)
+                default:
+                    break
+                }
             }
         }
 
-        let nsEvents = NightscoutPumpEvents.translate(timestampedPumpEvents, eventSource: "loop://\(UIDevice.current.name)", includeCarbs: false)
+        let nsEvents = NightscoutPumpEvents.translate(timestampedPumpEvents, eventSource: author, includeCarbs: false)
 
-        self.upload(nsEvents) { (result) in
+        self.upload(nsEvents + fakeEvents) { (result) in
             switch result {
             case .success( _):
                 completion(.success(objectIDs))

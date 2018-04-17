@@ -29,7 +29,9 @@ final class AnalyticsManager: IdentifiableClass {
     }
 
     static let shared = AnalyticsManager()
-
+    
+    public var loopManager : LoopDataManager? = nil
+    
     // MARK: - Helpers
 
     private var logger: CategoryLogger?
@@ -37,6 +39,12 @@ final class AnalyticsManager: IdentifiableClass {
     private func logEvent(_ name: String, withProperties properties: [AnyHashable: Any]? = nil, outOfSession: Bool = false) {
         logger?.debug("\(name) \(properties ?? [:])")
         amplitudeService.client?.logEvent(name, withEventProperties: properties, outOfSession: outOfSession)
+        
+        if let loop = self.loopManager {
+            if name != "Loop success" && name != "Status Screen"  {
+                loop.addInternalNote("Analytics: \(name) \(properties ?? [:])")
+            }
+        }
     }
 
     // MARK: - UIApplicationDelegate
@@ -58,7 +66,9 @@ final class AnalyticsManager: IdentifiableClass {
     func didDisplayStatusScreen() {
         logEvent("Status Screen")
     }
+    
 
+    
     // MARK: - Config Events
 
     func didChangeRileyLinkConnectionState() {
@@ -98,7 +108,11 @@ final class AnalyticsManager: IdentifiableClass {
     }
 
     func didChangeLoopSettings(from oldValue: LoopSettings, to newValue: LoopSettings) {
-        logEvent("Loop settings change")
+        if oldValue.rawValue.debugDescription == newValue.rawValue.debugDescription {
+            return
+        }
+        logEvent("Loop settings change \(oldValue.rawValue.debugDescription) \(newValue.rawValue.debugDescription)")
+        
 
         if newValue.maximumBasalRatePerHour != oldValue.maximumBasalRatePerHour {
             logEvent("Maximum basal rate change")
@@ -133,5 +147,27 @@ final class AnalyticsManager: IdentifiableClass {
 
     func loopDidError() {
         logEvent("Loop error", outOfSession: true)
+    }
+}
+
+// PRIVATE MODIFICATIONS
+extension AnalyticsManager {
+    func didDisplayQuickCarbScreen() {
+        logEvent("QuickCarb Screen")
+    }
+    
+    func didDisplayFoodPicker() {
+        logEvent("QuickCarb Screen")
+    }
+    
+    func didAddCarbsFromQuickCarbs(_ carbs: Int, _ glucose: Int, _ note: String) {
+        logEvent("AddCarbsFromQuickCarbs \(carbs)g \(glucose) mg/dl: \(note)")
+    }
+    
+    func didAddCarbsFromFoodPicker(_ pick: FoodPick) {
+        logEvent("AddCarbsFromFoodPicker \(pick.item.title): \(pick.displayCarbs)g ")
+    }
+    func loopDidError(_ error: Error) {
+        logEvent("Loop error \(error.localizedDescription)", outOfSession: true)
     }
 }
